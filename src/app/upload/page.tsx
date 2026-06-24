@@ -50,8 +50,8 @@ export default function UploadPage(): React.JSX.Element {
         <div className={styles.intro}>
           <h1 className={styles.title}>Upload a song</h1>
           <p className={styles.subtitle}>
-            Pick an audio file or a Clone Hero song (.zip / .chart / .mid). It
-            stays in your browser — nothing is uploaded to a server. We&apos;ll
+            Pick an audio file or a Clone Hero song (.sng / .zip / .chart / .mid).
+            It stays in your browser — nothing is uploaded to a server. We&apos;ll
             generate a playable chart — by analyzing the audio, on a quick BPM
             grid, or by importing the Clone Hero chart — and add it to the catalog
             for this session.

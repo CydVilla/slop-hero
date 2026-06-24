@@ -15,8 +15,8 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 - 🗂️ **Track catalog** (`/catalog`) lists every track and who contributed it.
 - 🎼 Upload audio → auto-generated chart. Two generators: **Auto-analyze**
   (real onset/tempo detection in a Web Worker) or a **Simple BPM grid**.
-- 🎸 **Clone Hero import**: drop a `.zip` song folder (or `.chart` / `.mid`) and
-  play it on the touchscreen.
+- 🎸 **Clone Hero import**: drop a `.sng`, a `.zip` song folder, or `.chart` /
+  `.mid` and play it on the touchscreen.
 - ⏱️ Web Audio API as the timing source (precise, monotonic clock).
 - 🎯 Five lanes (green/red/yellow/blue/orange), large touch targets.
 - 🟢 Hit windows: Perfect ±35ms, Great ±70ms, Good ±110ms.
@@ -87,19 +87,20 @@ analysis and stem separation are planned; see `docs/aiChartGenerationPlan.md`.
 
 ### Importing Clone Hero charts
 
-Clone Hero import **is supported**. On `/upload`, drop a song-folder **`.zip`**
-(containing `song.ini` + `notes.chart`/`notes.mid` + audio) or a bare
-**`.chart`** / **`.mid`** file. The app:
+Clone Hero import **is supported**. On `/upload`, drop a **`.sng`** package, a
+song-folder **`.zip`** (containing `song.ini` + `notes.chart`/`notes.mid` +
+audio), or a bare **`.chart`** / **`.mid`** file. The app:
 
-1. Unzips in the browser (`fflate`) and finds `song.ini`, the chart, and audio.
+1. Unpacks in the browser — `fflate` for `.zip`, a built-in SNGPKG reader for
+   `.sng` (`src/game/sngParser.ts`, including the XOR de-masking) — and finds the
+   metadata, chart, and audio.
 2. Parses metadata + which difficulties exist (`src/game/cloneHeroParser.ts`).
 3. Lets you pick a difficulty, then converts the 5 frets → 5 lanes into a
-   `RhythmChart`. If the folder has audio it plays with sound; otherwise it plays
-   in silent mode.
+   `RhythmChart`. If the song has audio (incl. `song.opus`) it plays with sound;
+   otherwise it plays in silent mode.
 
 Adaptations for touch: sustains import as taps, chords are capped at 2 notes, and
-HOPO/forced/tap/star-power flags are dropped. `.sng` (packed) isn't supported yet
-— export the folder as a `.zip`. Details and remaining work:
+HOPO/forced/tap/star-power flags are dropped. Details and remaining work:
 `docs/cloneHeroImportPlan.md`.
 
 ## Architecture
@@ -133,6 +134,7 @@ src/
     autoMapper.ts      # deterministic BPM-grid automapper (+ fallback)
     audioAnalysis.ts   # pure DSP: FFT, spectral-flux onsets, tempo, charting
     cloneHeroParser.ts # Clone Hero .chart / .mid / song.ini → RhythmChart
+    sngParser.ts       # Clone Hero .sng (SNGPKG) container reader + de-masking
   data/
     tracks.ts          # the open-source track catalog (add tracks here)
   hooks/
@@ -187,10 +189,11 @@ dev server, check `/catalog`, and open a PR.
 
 ## Not built yet (intentionally)
 
-Server-side ML audio analysis, stem separation, `.sng` import, accounts,
+Server-side ML audio analysis, stem separation, multi-stem mixing, accounts,
 payments, a persistent online song library, copyrighted-song hosting, and native
-Tesla integration. (Client-side onset/tempo analysis **and** Clone Hero
-`.chart`/`.mid` import **are** built — see above.) See `docs/` for the plans:
+Tesla integration. (Client-side onset/tempo analysis **and** Clone Hero import —
+`.sng` / `.zip` / `.chart` / `.mid` — **are** built; see above.) See `docs/` for
+the plans:
 
 - `docs/aiChartGenerationPlan.md` — real chart generation pipeline.
 - `docs/serverSideAudioAnalysis.md` — where heavy DSP/ML should run.

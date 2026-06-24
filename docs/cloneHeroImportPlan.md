@@ -5,12 +5,12 @@ the touchscreen tap-only mechanics.
 
 ## Current behavior (what happens today)
 
-Clone Hero import is **implemented** for `.chart` and `.mid` (via a `.zip` song
-folder, or a bare chart file):
+Clone Hero import is **implemented** for `.sng`, `.zip`, and bare `.chart` /
+`.mid` files:
 
-- The `/upload` screen accepts audio **and** Clone Hero files. Drop a `.zip`
-  song folder (or a bare `.chart` / `.mid`) and the UI reads it, shows the song
-  metadata + which difficulties exist, lets you pick one, and imports it.
+- The `/upload` screen accepts audio **and** Clone Hero files. Drop a `.sng`, a
+  `.zip` song folder, or a bare `.chart` / `.mid` and the UI reads it, shows the
+  song metadata + which difficulties exist, lets you pick one, and imports it.
 - Parsing lives in `src/game/cloneHeroParser.ts` (pure, no DOM):
   - `parseSongIni` — INI metadata.
   - `parseNotesChart` — full `.chart` parser (resolution + tempo map →
@@ -18,15 +18,17 @@ folder, or a bare chart file):
   - `parseNotesMidi` — a minimal Standard MIDI File reader (tempo track + the
     guitar track's note-on events per difficulty).
   - `importCloneHeroSong` — orchestrates the above into a `RhythmChart`.
-- ZIP intake + audio object URLs live in `src/lib/cloneHeroClient.ts`
+- `.sng` (SNGPKG) parsing lives in `src/game/sngParser.ts` (pure): reads the
+  header + 16-byte XOR mask, the metadata section (song.ini fields live here),
+  and the file index, then un-masks each packed file
+  (`byte ^= xorMask[i % 16] ^ (i & 0xFF)`). Opus/Ogg audio decodes natively.
+- ZIP/`.sng` intake + audio object URLs live in `src/lib/cloneHeroClient.ts`
   (`inspectCloneHeroFile` / `importCloneHeroPackage`), using `fflate` to unzip
-  in the browser. If the folder includes audio (`song.ogg`, etc.) it plays with
-  sound; otherwise the chart plays in silent mode.
+  in the browser. If the song includes audio (`song.opus`, `song.ogg`, …) it
+  plays with sound; otherwise the chart plays in silent mode.
 
 ### Known limitations / not yet done
 
-- `.sng` (Clone Hero's packed binary format) is not parsed — upload the folder
-  as a `.zip` instead.
 - Multi-stem audio is not mixed; we pick `song.*` (else `guitar.*`, else the
   first audio file).
 - Sustains import as taps (length kept on `durationMs` but ignored by scoring);
@@ -92,7 +94,8 @@ Because v1 is **tap-only**, when importing:
 
 ## Status
 
-Implemented for `.chart` and `.mid` via `src/game/cloneHeroParser.ts` +
-`src/lib/cloneHeroClient.ts`. Remaining work: `.sng` support, multi-stem audio
-mixing, sustain/HOPO modeling, and smarter difficulty thinning for very dense
-Expert charts on touch.
+Implemented for `.sng`, `.zip`, `.chart`, and `.mid` via
+`src/game/cloneHeroParser.ts`, `src/game/sngParser.ts`, and
+`src/lib/cloneHeroClient.ts`. Remaining work: multi-stem audio mixing,
+sustain/HOPO modeling, and smarter difficulty thinning for very dense Expert
+charts on touch.

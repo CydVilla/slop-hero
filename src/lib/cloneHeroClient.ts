@@ -21,6 +21,7 @@ import {
   parseSongIni,
   type CloneHeroSongMetadata,
 } from "@/game/cloneHeroParser";
+import { parseSng } from "@/game/sngParser";
 import type { Difficulty, RhythmChart } from "@/game/types";
 
 export interface CloneHeroPackage {
@@ -72,14 +73,67 @@ function audioUrlFrom(bytes: Uint8Array, ext: string): string {
   return URL.createObjectURL(blob);
 }
 
+/** Build our metadata shape from a .sng metadata map (no song.ini file). */
+function sngToMetadata(
+  map: Map<string, string>,
+  fallbackName: string,
+): CloneHeroSongMetadata {
+  const delay = map.get("delay");
+  return {
+    name: map.get("name") ?? fallbackName,
+    artist: map.get("artist"),
+    charter: map.get("charter"),
+    year: map.get("year"),
+    // .sng `delay` is in milliseconds (added to every note time).
+    offsetMs: delay !== undefined ? Math.round(Number(delay)) || 0 : undefined,
+  };
+}
+
+/** Inspect a Clone Hero `.sng` archive. */
+async function inspectSng(file: File): Promise<CloneHeroPackage> {
+  const pkg = parseSng(await file.arrayBuffer());
+  const entries = Object.fromEntries(pkg.files);
+  const findEntry = (name: string) =>
+    Object.keys(entries).find((k) => basename(k) === name);
+
+  const metadata = sngToMetadata(pkg.metadata, file.name.replace(/\.[^.]+$/, ""));
+  const audio = pickAudioEntry(entries);
+  const audioUrl = audio ? audioUrlFrom(audio.bytes, audio.ext) : undefined;
+
+  const chartKey = findEntry("notes.chart");
+  const midKey = findEntry("notes.mid");
+
+  if (chartKey) {
+    const chartText = new TextDecoder().decode(entries[chartKey]!);
+    return {
+      fileName: file.name,
+      metadata,
+      availableDifficulties: listChartDifficulties(chartText),
+      format: "chart",
+      chartText,
+      audioUrl,
+    };
+  }
+  if (midKey) {
+    const midiBytes = entries[midKey]!.slice().buffer;
+    return {
+      fileName: file.name,
+      metadata,
+      availableDifficulties: listMidiDifficulties(midiBytes),
+      format: "midi",
+      midiBytes,
+      audioUrl,
+    };
+  }
+  throw new Error("That .sng has no notes.chart or notes.mid inside.");
+}
+
 /** Inspect a dropped/chosen Clone Hero file without committing to a difficulty. */
 export async function inspectCloneHeroFile(file: File): Promise<CloneHeroPackage> {
   const ext = extOf(file.name);
 
   if (ext === "sng") {
-    throw new Error(
-      "Packed .sng files aren't supported yet — please upload the song folder as a .zip.",
-    );
+    return inspectSng(file);
   }
   if (ext === "ini") {
     throw new Error(

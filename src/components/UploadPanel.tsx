@@ -284,7 +284,7 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
         <span className={styles.dropTitle}>Tap to choose a file</span>
         <span className={styles.dropHint}>
           or drag &amp; drop · audio (mp3, wav, ogg, m4a) or a Clone Hero song
-          (.zip / .chart / .mid)
+          (.sng / .zip / .chart / .mid)
         </span>
       </label>
 

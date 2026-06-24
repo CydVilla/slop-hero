@@ -212,7 +212,8 @@ export function parseSongIni(contents: string): CloneHeroSongMetadata {
 /** Split a .chart into `[Section]` → content lines (between the braces). */
 function parseChartSections(text: string): Map<string, string[]> {
   const sections = new Map<string, string[]>();
-  const lines = text.split(/\r?\n/);
+  // Strip a leading UTF-8 BOM (common in .chart files extracted from archives).
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
   let i = 0;
   while (i < lines.length) {
     const header = (lines[i] ?? "").trim().match(/^\[(.+)\]$/);
