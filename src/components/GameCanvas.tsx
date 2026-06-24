@@ -13,7 +13,7 @@
  * setState, so the animation loop produces zero React re-renders.
  */
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import {
   FEEDBACK_DURATION_MS,
@@ -22,6 +22,7 @@ import {
   LANE_FLASH_MS,
   LANE_GLOW_COLORS,
   LANES,
+  NOTE_TRAVEL_MS,
 } from "@/game/constants";
 import { clamp, noteTravelProgress } from "@/game/timing";
 import type {
@@ -41,7 +42,19 @@ interface GameCanvasProps {
   feedbackRef: React.RefObject<HitFeedback[]>;
   laneFlashRef: React.RefObject<Record<Lane, number>>;
   onFrame: (songTimeMs: number) => void;
+  /** Player tapped a lane column on the highway (the primary touch input). */
+  onLaneTap?: (lane: Lane) => void;
 }
+
+/** A short-lived touch ripple drawn where the player's finger landed. */
+interface TapRipple {
+  x: number;
+  y: number;
+  createdAtMs: number;
+  color: string;
+}
+
+const TAP_RIPPLE_MS = 360;
 
 const HIT_LINE_RATIO = 0.82; // hit line position from top (0..1)
 const RATING_LABEL: Record<HitFeedback["rating"], string> = {
@@ -66,8 +79,10 @@ export function GameCanvas({
   feedbackRef,
   laneFlashRef,
   onFrame,
+  onLaneTap,
 }: GameCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const ripplesRef = useRef<TapRipple[]>([]);
   // Mirror frequently-changing props into refs so the rAF loop, which is set up
   // once, always sees the latest values without re-subscribing.
   const propsRef = useRef({
@@ -76,8 +91,45 @@ export function GameCanvas({
     getTimeMs,
     getCalibrationOffsetMs,
     onFrame,
+    onLaneTap,
   });
-  propsRef.current = { chart, phase, getTimeMs, getCalibrationOffsetMs, onFrame };
+  propsRef.current = {
+    chart,
+    phase,
+    getTimeMs,
+    getCalibrationOffsetMs,
+    onFrame,
+    onLaneTap,
+  };
+
+  // Pointer-down anywhere on the highway: figure out the lane column under the
+  // finger, fire the tap, and spawn a ripple at the touch point. Using
+  // pointerdown (not click) keeps latency low, and each simultaneous finger
+  // gets its own event so chords register.
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const { onLaneTap: tap, getTimeMs: getT } = propsRef.current;
+      if (!tap) return;
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const laneW = rect.width / LANE_COUNT;
+      const lane = Math.max(0, Math.min(LANE_COUNT - 1, Math.floor(x / laneW))) as Lane;
+      tap(lane);
+      ripplesRef.current.push({
+        x,
+        y,
+        createdAtMs: getT(),
+        color: LANE_GLOW_COLORS[lane],
+      });
+      if (ripplesRef.current.length > 24) {
+        ripplesRef.current = ripplesRef.current.slice(-24);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -125,6 +177,7 @@ export function GameCanvas({
       drawNotes(ctx, c, t, cal, laneW, hitLineY, runtimeRef.current);
       drawHitLine(ctx, w, laneW, hitLineY);
       drawFeedback(ctx, feedbackRef.current, laneW, hitLineY, t);
+      drawRipples(ctx, ripplesRef.current, laneW, t);
 
       raf = requestAnimationFrame(draw);
     };
@@ -140,10 +193,41 @@ export function GameCanvas({
   return (
     <canvas
       ref={canvasRef}
+      onPointerDown={handlePointerDown}
       style={{ width: "100%", height: "100%", display: "block", touchAction: "none" }}
-      aria-label="Note highway"
+      aria-label="Note highway — tap the lane under each note as it reaches the line"
     />
   );
+}
+
+function drawRipples(
+  ctx: CanvasRenderingContext2D,
+  ripples: TapRipple[] | null,
+  laneW: number,
+  t: number,
+): void {
+  if (!ripples || ripples.length === 0) return;
+  const maxR = laneW * 0.5;
+  for (const r of ripples) {
+    const age = t - r.createdAtMs;
+    if (age < 0 || age > TAP_RIPPLE_MS) continue;
+    const k = age / TAP_RIPPLE_MS;
+    const radius = maxR * (0.3 + 0.7 * k);
+    const alpha = 1 - k;
+
+    ctx.save();
+    ctx.strokeStyle = rgba(r.color, 0.7 * alpha);
+    ctx.lineWidth = 3 * (1 - k) + 1;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = rgba(r.color, 0.18 * alpha);
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, radius * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawLanes(
@@ -184,6 +268,11 @@ function drawLanes(
   }
 }
 
+/** Gem radius for a given lane width — large enough to feel touch-friendly. */
+function gemRadius(laneW: number): number {
+  return Math.max(16, Math.min(laneW * 0.36, 52));
+}
+
 function drawNotes(
   ctx: CanvasRenderingContext2D,
   chart: RhythmChart,
@@ -193,8 +282,8 @@ function drawNotes(
   hitLineY: number,
   runtime: Map<string, NoteRuntimeState> | null,
 ): void {
-  const noteW = laneW * 0.66;
-  const noteH = Math.min(26, laneW * 0.34);
+  const radius = gemRadius(laneW);
+  const pxPerMs = hitLineY / NOTE_TRAVEL_MS;
 
   for (const note of chart.notes) {
     if (runtime?.get(note.id)?.judged) continue;
@@ -209,35 +298,93 @@ function drawNotes(
 
     // Approaching notes brighten as they near the hit line.
     const nearness = clamp(progress, 0, 1);
-    drawNoteShape(ctx, cx, y, noteW, noteH, color, 0.55 + 0.45 * nearness);
+    const alpha = 0.6 + 0.4 * nearness;
+
+    // Sustain tail (trails above the gem), GH/RB style.
+    if (note.durationMs && note.durationMs > 0) {
+      const tail = Math.min(note.durationMs * pxPerMs, hitLineY);
+      if (tail > radius * 0.5) {
+        drawTail(ctx, cx, y, tail, radius * 0.62, color, alpha);
+      }
+    }
+
+    drawGem(ctx, cx, y, radius, color, alpha);
   }
 }
 
-function drawNoteShape(
+/** A vertical rounded sustain bar trailing above the gem. */
+function drawTail(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
-  w: number,
-  h: number,
+  length: number,
+  width: number,
   color: string,
   alpha: number,
 ): void {
-  const x = cx - w / 2;
-  const y = cy - h / 2;
-  const r = h / 2;
-
+  const x = cx - width / 2;
+  const top = cy - length;
   ctx.save();
+  const grad = ctx.createLinearGradient(0, top, 0, cy);
+  grad.addColorStop(0, rgba(color, 0.06 * alpha));
+  grad.addColorStop(1, rgba(color, 0.5 * alpha));
+  ctx.fillStyle = grad;
+  roundRect(ctx, x, top, width, length, width / 2);
+  ctx.fill();
+  // Bright center seam.
+  ctx.fillStyle = rgba(color, 0.5 * alpha, 0.55);
+  const seam = Math.max(2, width * 0.2);
+  roundRect(ctx, cx - seam / 2, top, seam, length, seam / 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** A round, glossy Guitar Hero / Rock Band–style note gem. */
+function drawGem(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  color: string,
+  alpha: number,
+): void {
+  ctx.save();
+
+  // Outer colored glow.
   ctx.shadowColor = color;
-  ctx.shadowBlur = 16 * alpha;
-  ctx.fillStyle = hexWithAlpha(color, alpha);
-  roundRect(ctx, x, y, w, h, r);
+  ctx.shadowBlur = 20 * alpha;
+
+  // Domed body: light top-left → color → darker rim.
+  const body = ctx.createRadialGradient(
+    cx - radius * 0.32,
+    cy - radius * 0.38,
+    radius * 0.12,
+    cx,
+    cy,
+    radius,
+  );
+  body.addColorStop(0, rgba(color, alpha, 0.55));
+  body.addColorStop(0.5, rgba(color, alpha, 0.05));
+  body.addColorStop(1, rgba(color, alpha, -0.45));
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fill();
 
-  // Glossy top highlight.
+  // Crisp rim.
   ctx.shadowBlur = 0;
-  ctx.fillStyle = hexWithAlpha("#ffffff", 0.25 * alpha);
-  roundRect(ctx, x + w * 0.12, y + h * 0.18, w * 0.76, h * 0.28, h * 0.18);
+  ctx.lineWidth = Math.max(1.5, radius * 0.1);
+  ctx.strokeStyle = rgba("#ffffff", 0.6 * alpha);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.9, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Glossy specular highlight near the top.
+  ctx.fillStyle = rgba("#ffffff", 0.5 * alpha);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - radius * 0.4, radius * 0.5, radius * 0.27, 0, 0, Math.PI * 2);
   ctx.fill();
+
   ctx.restore();
 }
 
@@ -255,19 +402,37 @@ function drawHitLine(
   ctx.lineTo(w, hitLineY);
   ctx.stroke();
 
-  // Per-lane target rings.
+  // Per-lane fret-pad targets (sized to match the gems).
   for (const lane of LANES) {
     const cx = lane * laneW + laneW / 2;
     const color = LANE_COLORS[lane];
-    const r = Math.min(22, laneW * 0.3);
+    const r = gemRadius(laneW);
 
     ctx.save();
+    // Recessed translucent pad the gem "lands" into.
+    const pad = ctx.createRadialGradient(cx, hitLineY, r * 0.2, cx, hitLineY, r);
+    pad.addColorStop(0, rgba(color, 0.22));
+    pad.addColorStop(1, rgba(color, 0.04));
+    ctx.fillStyle = pad;
+    ctx.beginPath();
+    ctx.arc(cx, hitLineY, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Glowing rim.
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 14;
     ctx.beginPath();
     ctx.arc(cx, hitLineY, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner hairline ring for a "fret" look.
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = rgba("#ffffff", 0.25);
+    ctx.beginPath();
+    ctx.arc(cx, hitLineY, r * 0.62, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -327,4 +492,30 @@ function hexWithAlpha(hex: string, alpha: number): string {
     .toString(16)
     .padStart(2, "0");
   return `${hex}${a}`;
+}
+
+/** Parse a #rrggbb hex color into rgb components. */
+function parseHex(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace("#", "");
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+/**
+ * Build an rgba() string from a #rrggbb hex with an alpha and optional shade.
+ * `shade` > 0 lightens toward white, < 0 darkens toward black (range -1..1).
+ */
+function rgba(hex: string, alpha: number, shade = 0): string {
+  let { r, g, b } = parseHex(hex);
+  if (shade !== 0) {
+    const target = shade > 0 ? 255 : 0;
+    const f = Math.abs(shade);
+    r = Math.round(r + (target - r) * f);
+    g = Math.round(g + (target - g) * f);
+    b = Math.round(b + (target - b) * f);
+  }
+  return `rgba(${r}, ${g}, ${b}, ${clamp(alpha, 0, 1)})`;
 }

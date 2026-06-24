@@ -1,5 +1,5 @@
 <!--
-Thanks for contributing to Tesla Rhythm!
+Thanks for contributing to Slop Hero!
 Please keep PRs focused. Make sure `npm run typecheck` and `npm run build` pass.
 -->
 

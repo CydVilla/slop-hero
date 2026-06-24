@@ -273,11 +273,15 @@ interface OnsetChartProfile {
   keepFraction: number;
 }
 
+// Tuned for tap-the-note touchscreen play. The previous values allowed notes
+// as close as 100ms apart (~10/s) which is impossible when the finger has to
+// travel to each gem; these enforce a much larger minimum spacing and keep a
+// smaller fraction of onsets so charts stay readable and reachable.
 const ONSET_PROFILES: Record<Difficulty, OnsetChartProfile> = {
-  easy: { minGapMs: 320, keepFraction: 0.4 },
-  medium: { minGapMs: 220, keepFraction: 0.6 },
-  hard: { minGapMs: 150, keepFraction: 0.8 },
-  expert: { minGapMs: 100, keepFraction: 0.95 },
+  easy: { minGapMs: 450, keepFraction: 0.3 },
+  medium: { minGapMs: 340, keepFraction: 0.45 },
+  hard: { minGapMs: 260, keepFraction: 0.6 },
+  expert: { minGapMs: 200, keepFraction: 0.78 },
 };
 
 const LANE_COUNT = 5;

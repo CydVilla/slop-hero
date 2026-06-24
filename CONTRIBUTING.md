@@ -1,6 +1,6 @@
-# Contributing to Tesla Rhythm
+# Contributing to Slop Hero
 
-Thanks for your interest in contributing! Tesla Rhythm is an open-source,
+Thanks for your interest in contributing! Slop Hero is an open-source,
 touchscreen rhythm game for the parked Tesla browser (and any landscape
 touchscreen). This guide covers how to get set up, the project conventions, and
 the easiest ways to contribute — including **adding a track to the catalog**.
@@ -18,7 +18,7 @@ Requirements: **Node 18+** (Node 22 recommended) and npm.
 
 ```bash
 git clone <your-fork-url>
-cd tesla-rhythm-game
+cd slop-hero
 npm install
 npm run dev        # http://localhost:3000
 ```

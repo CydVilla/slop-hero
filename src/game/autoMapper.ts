@@ -34,17 +34,29 @@ interface DifficultyProfile {
   fillChance: number;
   /** Probability that a populated slot becomes a two-note chord. */
   chordChance: number;
+  /**
+   * Absolute floor between consecutive notes, in ms. This caps throughput
+   * independent of BPM so a fast song can't produce an unplayable wall of taps
+   * on a touchscreen (where the finger must travel to each gem). Notes that
+   * would land sooner than this after the previous one are dropped; chord
+   * partners share a timestamp and are exempt.
+   */
+  minGapMs: number;
 }
 
+// Densities are deliberately conservative for tap-the-note touchscreen play.
+// Rough sustained ceilings (from minGapMs): easy ~2/s, medium ~3/s, hard ~4/s,
+// expert ~5.5/s — and fillChance keeps the average well below those peaks.
 const PROFILES: Record<Difficulty, DifficultyProfile> = {
   // ~one note every 2 beats
-  easy: { stepBeats: 2, fillChance: 0.85, chordChance: 0 },
+  easy: { stepBeats: 2, fillChance: 0.8, chordChance: 0, minGapMs: 500 },
   // ~one note every beat
-  medium: { stepBeats: 1, fillChance: 0.9, chordChance: 0 },
-  // quarter grid + occasional eighths
-  hard: { stepBeats: 0.5, fillChance: 0.7, chordChance: 0.05 },
-  // eighth grid + occasional chords (kept tame for touchscreens)
-  expert: { stepBeats: 0.5, fillChance: 0.95, chordChance: 0.18 },
+  medium: { stepBeats: 1, fillChance: 0.85, chordChance: 0, minGapMs: 320 },
+  // quarter grid + occasional eighths/chords
+  hard: { stepBeats: 0.5, fillChance: 0.7, chordChance: 0.05, minGapMs: 240 },
+  // eighth grid + chords. On a touchscreen "expert" means denser + more chords,
+  // not literally faster than fingers can travel, so the gap floor still applies.
+  expert: { stepBeats: 0.5, fillChance: 0.95, chordChance: 0.18, minGapMs: 200 },
 };
 
 /**
@@ -102,6 +114,7 @@ export function generateAutoChart(opts: AutoMapOptions): RhythmChart {
   const notes: ChartNote[] = [];
 
   let previousLane: Lane | null = null;
+  let lastNoteMs = -Infinity;
 
   // Leave a short lead-in so the first note is readable.
   const leadInBeats = 4;
@@ -110,8 +123,13 @@ export function generateAutoChart(opts: AutoMapOptions): RhythmChart {
     if (rng() > profile.fillChance) continue;
 
     const timeMs = beatsToMs(beat, bpm);
+    // Enforce the per-difficulty throughput floor so high-BPM songs stay
+    // playable on a touchscreen regardless of the beat grid.
+    if (timeMs - lastNoteMs < profile.minGapMs) continue;
+
     const lane = nextLane(rng, previousLane);
     previousLane = lane;
+    lastNoteMs = timeMs;
 
     notes.push({ id: makeNoteId("auto"), timeMs, lane, type: "tap" });
 

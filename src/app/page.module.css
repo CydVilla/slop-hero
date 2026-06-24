@@ -150,3 +150,31 @@
   display: flex;
   justify-content: center;
 }
+
+.githubLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  transition: color 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+
+.githubLink:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.githubLink:active {
+  transform: translateY(1px);
+}
+
+.githubIcon {
+  display: block;
+}

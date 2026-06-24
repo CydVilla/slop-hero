@@ -50,6 +50,19 @@ function basename(path: string): string {
   return (parts[parts.length - 1] ?? path).toLowerCase();
 }
 
+/** Directory portion of a path (forward/back slashes), no trailing slash. */
+function dirOf(path: string): string {
+  const p = path.replace(/\\/g, "/");
+  const i = p.lastIndexOf("/");
+  return i >= 0 ? p.slice(0, i) : "";
+}
+
+/** Last path segment, preserving original casing (for display). */
+function lastSegment(path: string): string {
+  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
 function extOf(name: string): string {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
@@ -166,50 +179,124 @@ export async function inspectCloneHeroFile(file: File): Promise<CloneHeroPackage
 
   if (ext === "zip") {
     const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
-    const keys = Object.keys(entries);
-
-    const findEntry = (name: string) =>
-      keys.find((k) => basename(k) === name);
-
-    const iniKey = findEntry("song.ini");
-    const chartKey = findEntry("notes.chart");
-    const midKey = findEntry("notes.mid");
-
-    const metadata = iniKey
-      ? parseSongIni(strFromU8(entries[iniKey]!))
-      : chartKey
-        ? readChartMetadata(strFromU8(entries[chartKey]!))
-        : { name: file.name.replace(/\.[^.]+$/, "") };
-
-    const audio = pickAudioEntry(entries);
-    const audioUrl = audio ? audioUrlFrom(audio.bytes, audio.ext) : undefined;
-
-    if (chartKey) {
-      const chartText = strFromU8(entries[chartKey]!);
-      return {
-        fileName: file.name,
-        metadata,
-        availableDifficulties: listChartDifficulties(chartText),
-        format: "chart",
-        chartText,
-        audioUrl,
-      };
-    }
-    if (midKey) {
-      const midiBytes = entries[midKey]!.slice().buffer;
-      return {
-        fileName: file.name,
-        metadata,
-        availableDifficulties: listMidiDifficulties(midiBytes),
-        format: "midi",
-        midiBytes,
-        audioUrl,
-      };
-    }
-    throw new Error("That .zip has no notes.chart or notes.mid inside.");
+    return inspectEntries(entries, file.name);
   }
 
   throw new Error("Unsupported file. Upload a .zip song folder, .chart, or .mid.");
+}
+
+/**
+ * Process an in-memory set of song files (from a .zip or a dropped folder).
+ *
+ * Scopes to the directory that actually contains notes.chart/notes.mid so a
+ * folder/zip with the song nested one level deep (or a parent that holds a
+ * single song) still resolves to one coherent song + its audio.
+ */
+function inspectEntries(
+  entries: Record<string, Uint8Array>,
+  fileName: string,
+): CloneHeroPackage {
+  const allKeys = Object.keys(entries);
+
+  // Locate the song directory via the first chart/mid we find.
+  const songKey = allKeys.find((k) => {
+    const b = basename(k);
+    return b === "notes.chart" || b === "notes.mid";
+  });
+  const songDir = songKey ? dirOf(songKey) : "";
+
+  // Keep only files that live alongside the chart (so audio/ini match the song).
+  const scoped: Record<string, Uint8Array> = {};
+  for (const k of allKeys) {
+    if (dirOf(k) === songDir) scoped[k] = entries[k]!;
+  }
+  const entriesForSong = songKey ? scoped : entries;
+  const keys = Object.keys(entriesForSong);
+
+  const findEntry = (name: string) => keys.find((k) => basename(k) === name);
+
+  const iniKey = findEntry("song.ini");
+  const chartKey = findEntry("notes.chart");
+  const midKey = findEntry("notes.mid");
+
+  const metadata = iniKey
+    ? parseSongIni(strFromU8(entriesForSong[iniKey]!))
+    : chartKey
+      ? readChartMetadata(strFromU8(entriesForSong[chartKey]!))
+      : { name: fileName.replace(/\.[^.]+$/, "") };
+
+  const audio = pickAudioEntry(entriesForSong);
+  const audioUrl = audio ? audioUrlFrom(audio.bytes, audio.ext) : undefined;
+
+  if (chartKey) {
+    const chartText = strFromU8(entriesForSong[chartKey]!);
+    return {
+      fileName,
+      metadata,
+      availableDifficulties: listChartDifficulties(chartText),
+      format: "chart",
+      chartText,
+      audioUrl,
+    };
+  }
+  if (midKey) {
+    const midiBytes = entriesForSong[midKey]!.slice().buffer;
+    return {
+      fileName,
+      metadata,
+      availableDifficulties: listMidiDifficulties(midiBytes),
+      format: "midi",
+      midiBytes,
+      audioUrl,
+    };
+  }
+  throw new Error("That song folder has no notes.chart or notes.mid inside.");
+}
+
+/** A file plus its path relative to the dropped/selected folder root. */
+export interface NamedFile {
+  path: string;
+  file: File;
+}
+
+/**
+ * Inspect a Clone Hero song folder dropped or selected directly (no zipping).
+ *
+ * Only the files needed to build the song (chart/mid, song.ini, audio) are read
+ * into memory, so dropping a folder that also contains art/video stays cheap.
+ */
+export async function inspectCloneHeroFolder(
+  files: NamedFile[],
+): Promise<CloneHeroPackage> {
+  if (files.length === 0) throw new Error("That folder was empty.");
+
+  const songFile = files.find((f) => {
+    const b = basename(f.path);
+    return b === "notes.chart" || b === "notes.mid";
+  });
+  if (!songFile) {
+    throw new Error("No notes.chart or notes.mid found in that folder.");
+  }
+
+  const songDir = dirOf(songFile.path);
+  const isNeeded = (f: NamedFile): boolean => {
+    if (dirOf(f.path) !== songDir) return false;
+    const b = basename(f.path);
+    return (
+      b === "notes.chart" ||
+      b === "notes.mid" ||
+      b === "song.ini" ||
+      AUDIO_EXT.includes(extOf(b))
+    );
+  };
+
+  const entries: Record<string, Uint8Array> = {};
+  for (const f of files.filter(isNeeded)) {
+    entries[f.path] = new Uint8Array(await f.file.arrayBuffer());
+  }
+
+  const display = songDir ? lastSegment(songDir) : songFile.file.name;
+  return inspectEntries(entries, display);
 }
 
 export interface CloneHeroImport {

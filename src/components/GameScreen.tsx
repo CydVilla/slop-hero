@@ -6,8 +6,8 @@
  * Composition root for an actual play session. It wires together:
  *   - useAudioEngine (the clock + sound),
  *   - useRhythmGame  (rules + transitions),
- *   - GameCanvas     (rendering + the rAF loop),
- *   - LaneControls / ScorePanel / CalibrationPanel (UI),
+ *   - GameCanvas     (rendering + the rAF loop + tap-the-note input),
+ *   - ScorePanel / CalibrationPanel (UI),
  *   - keyboard input for desktop testing.
  *
  * It deliberately holds almost no gameplay logic itself — that lives in the
@@ -15,18 +15,17 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CalibrationPanel } from "./CalibrationPanel";
 import { GameCanvas } from "./GameCanvas";
-import { LaneControls } from "./LaneControls";
 import { ScorePanel } from "./ScorePanel";
 import styles from "./GameScreen.module.css";
 
 import { KEYBOARD_LANE_MAP } from "@/game/constants";
 import { chartDurationMs } from "@/game/chartUtils";
 import { accuracyPercent } from "@/game/scoring";
-import type { Lane, RhythmChart } from "@/game/types";
+import type { RhythmChart } from "@/game/types";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import { useRhythmGame } from "@/hooks/useRhythmGame";
 
@@ -49,7 +48,6 @@ export function GameScreen({
   const game = useRhythmGame(chart, audio);
   const { tapLane, togglePause, start, restart } = game;
 
-  const [activeKeyLanes, setActiveKeyLanes] = useState<Set<Lane>>(new Set());
   const [debug, setDebug] = useState({ song: 0, chart: 0 });
 
   const tailMs = 2000;
@@ -72,7 +70,8 @@ export function GameScreen({
     };
   }, [audioUrl, durationMs, loadFromUrl, loadSilent]);
 
-  // Keyboard input (desktop testing): A/S/D/F/G lanes, Space play/pause.
+  // Keyboard input (desktop testing only): A/S/D/F/G lanes, Space play/pause.
+  // The primary input is tapping the notes directly on the highway.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
@@ -84,29 +83,11 @@ export function GameScreen({
       const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
       if (lane !== undefined) {
         tapLane(lane);
-        setActiveKeyLanes((prev) => {
-          const next = new Set(prev);
-          next.add(lane);
-          return next;
-        });
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
-      if (lane !== undefined) {
-        setActiveKeyLanes((prev) => {
-          if (!prev.has(lane)) return prev;
-          const next = new Set(prev);
-          next.delete(lane);
-          return next;
-        });
       }
     };
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
     };
   }, [tapLane, togglePause]);
 
@@ -123,12 +104,9 @@ export function GameScreen({
     return () => window.clearInterval(id);
   }, [game.phase, getTimeMs, calibrationOffsetMs, chart.offsetMs]);
 
-  const handleLanePress = useCallback((lane: Lane) => tapLane(lane), [tapLane]);
-
   const showStart = game.phase === "idle";
   const showPaused = game.phase === "paused";
   const showFinished = game.phase === "finished";
-  const padsDisabled = game.phase !== "playing";
 
   return (
     <div className={styles.screen}>
@@ -159,6 +137,7 @@ export function GameScreen({
           feedbackRef={game.feedbackRef}
           laneFlashRef={game.laneFlashRef}
           onFrame={game.update}
+          onLaneTap={tapLane}
         />
 
         <div className={`${styles.overlay} ${styles.overlayTopLeft}`}>
@@ -178,7 +157,7 @@ export function GameScreen({
         {showStart && (
           <Splash
             title="Ready?"
-            subtitle="Tap the lanes (or A S D F G) in time with the notes."
+            subtitle="Tap each note as it reaches the line. (Desktop: A S D F G.)"
             actionLabel="Start"
             onAction={start}
           />
@@ -208,14 +187,6 @@ export function GameScreen({
           />
         )}
       </div>
-
-      <footer className={styles.pads}>
-        <LaneControls
-          onLanePress={handleLanePress}
-          activeLanes={activeKeyLanes}
-          disabled={padsDisabled}
-        />
-      </footer>
     </div>
   );
 }

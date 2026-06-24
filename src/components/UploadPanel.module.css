@@ -26,8 +26,96 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.dropzoneActive {
+  border-color: #818cf8;
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.dragOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 10, 20, 0.72);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.dragOverlayInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 48px 56px;
+  border: 2px dashed #818cf8;
+  border-radius: 24px;
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.dragOverlayTitle {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.dragOverlayHint {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.65);
+  max-width: 360px;
+  line-height: 1.5;
+}
+
 .hiddenInput {
   display: none;
+}
+
+.folderRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: -8px;
+}
+
+.folderHint {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.folderHint strong {
+  color: #fff;
+}
+
+.dropAny {
+  margin: -6px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.dropAny strong {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.folderBtn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.folderBtn:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .dropTitle {

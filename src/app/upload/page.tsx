@@ -1,69 +1,39 @@
-"use client";
-
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback } from "react";
 
-import { UploadPanel, type UploadResult } from "@/components/UploadPanel";
-import { addSessionTrack, trackToActiveSong, type CatalogTrack } from "@/data/tracks";
-import { chartDurationMs } from "@/game/chartUtils";
-import { setActiveSong } from "@/lib/activeSong";
+import { detectTeslaBrowser } from "@/lib/teslaBrowser.server";
 
+import { UploadClient } from "./UploadClient";
 import styles from "./upload.module.css";
 
-export default function UploadPage(): React.JSX.Element {
-  const router = useRouter();
+export default async function UploadPage(): Promise<React.JSX.Element> {
+  const isTesla = await detectTeslaBrowser();
 
-  const handleReady = useCallback(
-    (result: UploadResult) => {
-      // Register the upload in the (session-scoped) catalog so it shows up
-      // alongside built-in tracks with attribution.
-      const track: CatalogTrack = {
-        id: `session-${Date.now()}`,
-        title: result.chart.title,
-        artist: result.chart.artist ?? "Your upload",
-        contributor: result.contributor,
-        difficulty: result.chart.difficulty,
-        bpm: result.chart.bpm ?? 120,
-        durationSeconds: Math.round(chartDurationMs(result.chart) / 1000),
-        addedAt: new Date().toISOString().slice(0, 10),
-        source: "session",
-        audioUrl: result.audioUrl,
-        build: () => result.chart,
-      };
-      addSessionTrack(track);
-      setActiveSong(trackToActiveSong(track));
-      router.push("/play");
-    },
-    [router],
-  );
+  if (isTesla) {
+    return (
+      <main className={styles.main}>
+        <header className={styles.header}>
+          <Link href="/" className={styles.back}>
+            ‹ Home
+          </Link>
+        </header>
 
-  return (
-    <main className={styles.main}>
-      <header className={styles.header}>
-        <Link href="/" className={styles.back}>
-          ‹ Home
-        </Link>
-      </header>
+        <section className={styles.body}>
+          <div className={styles.intro}>
+            <h1 className={styles.title}>Uploading isn&apos;t available here</h1>
+            <p className={styles.subtitle}>
+              The Tesla browser can&apos;t open local files, so uploads are
+              disabled. Pick from the built-in tracks instead — or upload from a
+              phone or computer, then add it via a PR.
+            </p>
+          </div>
 
-      <section className={styles.body}>
-        <div className={styles.intro}>
-          <h1 className={styles.title}>Upload a song</h1>
-          <p className={styles.subtitle}>
-            Pick an audio file or a Clone Hero song (.sng / .zip / .chart / .mid).
-            It stays in your browser — nothing is uploaded to a server. We&apos;ll
-            generate a playable chart — by analyzing the audio, on a quick BPM
-            grid, or by importing the Clone Hero chart — and add it to the catalog
-            for this session.
+          <p className={styles.demoLink}>
+            Browse the <Link href="/catalog">track catalog →</Link>
           </p>
-        </div>
+        </section>
+      </main>
+    );
+  }
 
-        <UploadPanel onReady={handleReady} />
-
-        <p className={styles.demoLink}>
-          Browse the <Link href="/catalog">track catalog →</Link>
-        </p>
-      </section>
-    </main>
-  );
+  return <UploadClient />;
 }

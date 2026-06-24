@@ -1,4 +1,4 @@
-# Tesla Rhythm 🎵
+# Slop Hero 🎵
 
 A touchscreen rhythm game for the **Tesla in-car browser**. It is a Clone Hero /
 Rock Band–style game adapted for a large touchscreen: **tap-only**, five big
@@ -15,7 +15,8 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 - 🗂️ **Track catalog** (`/catalog`) lists every track and who contributed it.
 - 🎼 Upload audio → auto-generated chart. Two generators: **Auto-analyze**
   (real onset/tempo detection in a Web Worker) or a **Simple BPM grid**.
-- 🎸 **Clone Hero import**: drop a `.sng`, a `.zip` song folder, or `.chart` /
+- 🎸 **Clone Hero import**: drop a `.sng`, a `.zip` song folder, an unzipped
+  **song folder** (drag-and-drop or "Choose folder"), or a bare `.chart` /
   `.mid` and play it on the touchscreen.
 - ⏱️ Web Audio API as the timing source (precise, monotonic clock).
 - 🎯 Five lanes (green/red/yellow/blue/orange), large touch targets.
@@ -54,7 +55,8 @@ npm run lint       # next lint
 
 1. Open `/play` (or pick a track from `/catalog`, or upload a song first).
 2. Press **Start** (or **Space**).
-3. Tap a lane pad the moment its note reaches the hit line.
+3. **Tap the note itself** — touch its lane on the highway the moment the gem
+   reaches the hit line. Each finger taps its own note, so chords work.
    - Desktop: keys **A S D F G** map to the five lanes.
 4. If notes feel early/late, nudge the **Calibration** offset.
 
@@ -89,11 +91,14 @@ analysis and stem separation are planned; see `docs/aiChartGenerationPlan.md`.
 
 Clone Hero import **is supported**. On `/upload`, drop a **`.sng`** package, a
 song-folder **`.zip`** (containing `song.ini` + `notes.chart`/`notes.mid` +
-audio), or a bare **`.chart`** / **`.mid`** file. The app:
+audio), an **unzipped song folder** (drag the folder onto the dropzone, or use
+**Choose folder**), or a bare **`.chart`** / **`.mid`** file. The app:
 
 1. Unpacks in the browser — `fflate` for `.zip`, a built-in SNGPKG reader for
-   `.sng` (`src/game/sngParser.ts`, including the XOR de-masking) — and finds the
-   metadata, chart, and audio.
+   `.sng` (`src/game/sngParser.ts`, including the XOR de-masking), or direct
+   reads for a dropped folder — and finds the metadata, chart, and audio. For
+   folders it scopes to the directory holding `notes.chart`/`notes.mid`, so
+   dragging a parent folder still resolves to one song + its matching audio.
 2. Parses metadata + which difficulties exist (`src/game/cloneHeroParser.ts`).
 3. Lets you pick a difficulty, then converts the 5 frets → 5 lanes into a
    `RhythmChart`. If the song has audio (incl. `song.opus`) it plays with sound;
@@ -118,8 +123,7 @@ src/
     editor/page.tsx    # chart viewer placeholder
   components/          # React UI (rendering + panels)
     GameScreen.tsx     # composition root for a play session
-    GameCanvas.tsx     # imperative Canvas renderer + the single rAF loop
-    LaneControls.tsx   # large tap pads (Pointer Events)
+    GameCanvas.tsx     # Canvas renderer + rAF loop + tap-the-note input
     PlayRandomButton.tsx # picks a random track → /play
     ScorePanel.tsx
     CalibrationPanel.tsx

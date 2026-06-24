@@ -20,7 +20,7 @@
  * is planned but not implemented yet (see docs/cloneHeroImportPlan.md).
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { generateAutoChart } from "@/game/autoMapper";
 import type { Difficulty, RhythmChart } from "@/game/types";
@@ -28,7 +28,9 @@ import { analyzeFileToChart } from "@/lib/analyzeClient";
 import {
   importCloneHeroPackage,
   inspectCloneHeroFile,
+  inspectCloneHeroFolder,
   type CloneHeroPackage,
+  type NamedFile,
 } from "@/lib/cloneHeroClient";
 
 import styles from "./UploadPanel.module.css";
@@ -53,6 +55,14 @@ interface FileMeta {
 }
 
 type ChartSource = "analyze" | "grid";
+
+// `webkitdirectory`/`directory` aren't in React's typed input props, but they
+// must be present at first render (not added later in an effect) so the native
+// picker opens in folder-selection mode reliably across browsers.
+const DIRECTORY_ATTRS = {
+  webkitdirectory: "",
+  directory: "",
+} as unknown as React.InputHTMLAttributes<HTMLInputElement>;
 
 const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard", "expert"];
 
@@ -81,6 +91,62 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function readEntryFile(entry: FileSystemFileEntry): Promise<File> {
+  return new Promise((resolve, reject) => entry.file(resolve, reject));
+}
+
+function readDirEntries(
+  reader: FileSystemDirectoryReader,
+): Promise<FileSystemEntry[]> {
+  return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+}
+
+/** Recursively collect files (with their full path) from a dropped entry. */
+async function walkEntry(entry: FileSystemEntry, out: NamedFile[]): Promise<void> {
+  if (entry.isFile) {
+    try {
+      const file = await readEntryFile(entry as FileSystemFileEntry);
+      out.push({ path: entry.fullPath, file });
+    } catch {
+      /* skip unreadable file */
+    }
+    return;
+  }
+  if (entry.isDirectory) {
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    // readEntries yields in batches; keep reading until it returns empty.
+    for (;;) {
+      let batch: FileSystemEntry[];
+      try {
+        batch = await readDirEntries(reader);
+      } catch {
+        break;
+      }
+      if (batch.length === 0) break;
+      for (const e of batch) await walkEntry(e, out);
+    }
+  }
+}
+
+/**
+ * If a folder was dropped, expand it into a flat list of files.
+ * Returns null when no directory is present (so the single-file path handles it).
+ * Note: webkitGetAsEntry() must be read synchronously before any await.
+ */
+async function folderFilesFromDrop(dt: DataTransfer): Promise<NamedFile[] | null> {
+  const items = dt.items;
+  if (!items || items.length === 0) return null;
+  const entries: FileSystemEntry[] = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const entry = items[i]?.webkitGetAsEntry?.();
+    if (entry) entries.push(entry);
+  }
+  if (!entries.some((e) => e.isDirectory)) return null;
+  const out: NamedFile[] = [];
+  for (const e of entries) await walkEntry(e, out);
+  return out;
+}
+
 export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
   const [meta, setMeta] = useState<FileMeta | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -98,9 +164,11 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
   const [chDifficulty, setChDifficulty] = useState<Difficulty>("expert");
   const [inspecting, setInspecting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   const previousUrlRef = useRef<string | null>(null);
   const fileRef = useRef<File | null>(null);
+  const dirInputRef = useRef<HTMLInputElement | null>(null);
 
   const resetForNewFile = useCallback(() => {
     setError(null);
@@ -152,6 +220,30 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
     }
   }, []);
 
+  const handleCloneHeroFolder = useCallback(
+    async (files: NamedFile[]) => {
+      resetForNewFile();
+      setInspecting(true);
+      try {
+        const pkg = await inspectCloneHeroFolder(files);
+        if (pkg.availableDifficulties.length === 0) {
+          setError("Couldn't find a playable guitar track in that folder.");
+          return;
+        }
+        setChPkg(pkg);
+        const last = pkg.availableDifficulties[pkg.availableDifficulties.length - 1]!;
+        setChDifficulty(
+          pkg.availableDifficulties.includes("expert") ? "expert" : last,
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't read that folder.");
+      } finally {
+        setInspecting(false);
+      }
+    },
+    [resetForNewFile],
+  );
+
   const handleFile = useCallback(
     (file: File) => {
       resetForNewFile();
@@ -174,14 +266,73 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
     [handleFile],
   );
 
-  const onDrop = useCallback(
-    (e: React.DragEvent<HTMLLabelElement>) => {
-      e.preventDefault();
-      const file = e.dataTransfer.files?.[0];
-      if (file) handleFile(file);
+  const onDirInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const list = e.target.files;
+      if (!list || list.length === 0) return;
+      const files: NamedFile[] = Array.from(list).map((f) => ({
+        path: f.webkitRelativePath || f.name,
+        file: f,
+      }));
+      void handleCloneHeroFolder(files);
+      // Allow re-selecting the same folder later.
+      e.target.value = "";
     },
-    [handleFile],
+    [handleCloneHeroFolder],
   );
+
+  const handleDataTransfer = useCallback(
+    (dt: DataTransfer) => {
+      // Snapshot what we need synchronously — DataTransfer is only valid during
+      // the event, and webkitGetAsEntry() must be read before any await.
+      const firstFile = dt.files?.[0] ?? null;
+      void folderFilesFromDrop(dt).then((folderFiles) => {
+        if (folderFiles) {
+          if (folderFiles.length === 0) {
+            setError("That folder was empty.");
+            return;
+          }
+          void handleCloneHeroFolder(folderFiles);
+          return;
+        }
+        if (firstFile) handleFile(firstFile);
+      });
+    },
+    [handleFile, handleCloneHeroFolder],
+  );
+
+  // Make the whole page a drop target. Dropping a file/folder anywhere on the
+  // upload screen works (and the browser won't try to open it), which is far
+  // more forgiving than aiming for the dashed box.
+  useEffect(() => {
+    const hasFiles = (e: DragEvent): boolean =>
+      Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+    const onDragOver = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDragActive(true);
+    };
+    const onDragLeave = (e: DragEvent) => {
+      // relatedTarget is null when the cursor leaves the window entirely.
+      if (e.relatedTarget === null) setDragActive(false);
+    };
+    const onWindowDrop = (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      e.preventDefault();
+      setDragActive(false);
+      handleDataTransfer(e.dataTransfer);
+    };
+
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onWindowDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onWindowDrop);
+    };
+  }, [handleDataTransfer]);
 
   const canGenerate = audioUrl !== null && meta !== null && !analyzing;
 
@@ -270,11 +421,19 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
 
   return (
     <div className={styles.panel}>
-      <label
-        className={styles.dropzone}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-      >
+      {dragActive && (
+        <div className={styles.dragOverlay}>
+          <div className={styles.dragOverlayInner}>
+            <span className={styles.dragOverlayTitle}>Drop to load</span>
+            <span className={styles.dragOverlayHint}>
+              audio, a Clone Hero song (.sng / .zip / .chart / .mid), or a song
+              folder — drop anywhere
+            </span>
+          </div>
+        </div>
+      )}
+
+      <label className={`${styles.dropzone} ${dragActive ? styles.dropzoneActive : ""}`}>
         <input
           type="file"
           accept="audio/*,.zip,.chart,.mid,.midi,.sng,.ini"
@@ -283,10 +442,37 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
         />
         <span className={styles.dropTitle}>Tap to choose a file</span>
         <span className={styles.dropHint}>
-          or drag &amp; drop · audio (mp3, wav, ogg, m4a) or a Clone Hero song
-          (.sng / .zip / .chart / .mid)
+          audio (mp3, wav, ogg, m4a) or a single Clone Hero file (.sng / .zip /
+          .chart / .mid)
         </span>
       </label>
+
+      <div className={styles.folderRow}>
+        <input
+          ref={dirInputRef}
+          type="file"
+          {...DIRECTORY_ATTRS}
+          className={styles.hiddenInput}
+          onChange={onDirInputChange}
+        />
+        <span className={styles.folderHint}>
+          Got an <strong>unzipped</strong>{" "}
+          Clone Hero folder? Use this button (the file picker above can&apos;t
+          select folders) —
+        </span>
+        <button
+          type="button"
+          className={styles.folderBtn}
+          onClick={() => dirInputRef.current?.click()}
+        >
+          Choose folder
+        </button>
+      </div>
+
+      <p className={styles.dropAny}>
+        …or just drag &amp; drop a file <strong>or a folder</strong> anywhere on
+        this page.
+      </p>
 
       {error && <div className={styles.notice}>{error}</div>}
       {info && <div className={styles.info}>{info}</div>}

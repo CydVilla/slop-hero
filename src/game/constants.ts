@@ -10,11 +10,18 @@ export const LANE_COUNT = 5 as const;
 
 export const LANES: readonly Lane[] = [0, 1, 2, 3, 4] as const;
 
-/** Hit windows in milliseconds (absolute timing error, +/-). */
+/**
+ * Hit windows in milliseconds (absolute timing error, +/-).
+ *
+ * Widened from the original keyboard-tuned values (35/70/110) because the player
+ * now taps the falling notes directly on a touchscreen — fingers are less
+ * precise and have more input latency than key presses, so the judged band is
+ * more forgiving. (A wider window also means a taller, easier-to-hit gem zone.)
+ */
 export const HIT_WINDOWS = {
-  perfect: 35,
-  great: 70,
-  good: 110,
+  perfect: 50,
+  great: 95,
+  good: 140,
 } as const;
 
 /**
@@ -46,8 +53,13 @@ export const COMBO_MULTIPLIERS: ReadonlyArray<readonly [number, number]> = [
  * How long notes take to travel from spawn (top of highway) to the hit line.
  * Lower = faster scroll = harder to read. This is the single source of truth
  * for converting note time into screen position.
+ *
+ * Tuned slow for touchscreen play: because the player taps each falling gem
+ * directly (the finger has to travel to the gem), a calmer approach speed gives
+ * much more time to read the lane and reach it. Density (in the auto-mappers) is
+ * the other half of "can a human keep up" and is tuned alongside this.
  */
-export const NOTE_TRAVEL_MS = 1600;
+export const NOTE_TRAVEL_MS = 2300;
 
 /** How long hit/miss feedback stays visible. */
 export const FEEDBACK_DURATION_MS = 450;

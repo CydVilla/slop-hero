@@ -71,7 +71,7 @@ export function createDemoChart(): RhythmChart {
   return {
     id: "demo_default",
     title: "Highway Demo",
-    artist: "Tesla Rhythm",
+    artist: "Slop Hero",
     bpm: DEMO_BPM,
     offsetMs: 0,
     difficulty: "medium",
