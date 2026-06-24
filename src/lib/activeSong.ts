@@ -11,15 +11,23 @@
  *    random built-in track (silent/demo mode).
  */
 
-import type { RhythmChart } from "@/game/types";
+import type { Difficulty, RhythmChart } from "@/game/types";
 
 export interface ActiveSong {
   chart: RhythmChart;
   /** blob: URL for uploaded audio, or undefined for demo/silent mode. */
   audioUrl?: string;
+  /** YouTube video id when the audio source is an embedded YouTube video. */
+  youtubeId?: string;
   title: string;
   /** Optional secondary line shown in the play header (artist · contributor). */
   subtitle?: string;
+  /**
+   * When set, /play should (re)derive the chart from `audioUrl` via onset
+   * analysis before starting — used for built-in audio tracks so their notes
+   * match the music. The `chart` above is a usable grid fallback meanwhile.
+   */
+  analyze?: { difficulty: Difficulty; bpmHint: number; artist?: string };
 }
 
 let current: ActiveSong | null = null;

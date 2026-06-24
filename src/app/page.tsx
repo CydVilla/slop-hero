@@ -1,11 +1,9 @@
 import Link from "next/link";
 
 import { PlayRandomButton } from "@/components/PlayRandomButton";
-import { detectTeslaBrowser } from "@/lib/teslaBrowser.server";
 import styles from "./page.module.css";
 
-export default async function LandingPage(): Promise<React.JSX.Element> {
-  const isTesla = await detectTeslaBrowser();
+export default function LandingPage(): React.JSX.Element {
   return (
     <main className={styles.main}>
       <div className={styles.glow} aria-hidden />
@@ -21,10 +19,9 @@ export default async function LandingPage(): Promise<React.JSX.Element> {
           <span className={styles.titleAccent}>Park &amp; play.</span>
         </h1>
         <p className={styles.subtitle}>
-          A Clone&nbsp;Hero–style rhythm game built for a big touchscreen.{" "}
-          {isTesla
-            ? "Pick a track from the catalog and tap five large lanes in time with the music — no guitar controller required."
-            : "Upload a track, get an instant playable chart, and tap five large lanes in time with the music — no guitar controller required."}
+          A Clone&nbsp;Hero–style rhythm game built for a big touchscreen. Upload
+          a track or paste a YouTube link, get an instant playable chart, and tap
+          five large lanes in time with the music — no guitar controller required.
         </p>
 
         <div className={styles.actions}>
@@ -34,11 +31,9 @@ export default async function LandingPage(): Promise<React.JSX.Element> {
           <Link href="/catalog" className={`${styles.btn} ${styles.btnSecondary}`}>
             Browse catalog
           </Link>
-          {!isTesla && (
-            <Link href="/upload" className={`${styles.btn} ${styles.btnSecondary}`}>
-              Upload song
-            </Link>
-          )}
+          <Link href="/upload" className={`${styles.btn} ${styles.btnSecondary}`}>
+            Upload song
+          </Link>
         </div>
 
         <nav className={styles.subnav}>

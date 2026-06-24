@@ -89,6 +89,30 @@
   right: 12px;
 }
 
+/* Embedded YouTube player. Kept visible (required by YouTube's ToS) but small
+   and out of the way; pointer-events are disabled so taps fall through to the
+   highway and a stray tap can't pause/desync the video. */
+.ytPlayer {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  width: clamp(120px, 18vw, 200px);
+  aspect-ratio: 16 / 9;
+  z-index: 4;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  background: #000;
+}
+
+.ytPlayer :global(iframe) {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 /* Splash / overlays ------------------------------------------------------- */
 
 .splash {

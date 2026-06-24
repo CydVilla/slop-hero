@@ -32,12 +32,15 @@ import {
   type CloneHeroPackage,
   type NamedFile,
 } from "@/lib/cloneHeroClient";
+import { parseLengthSeconds, parseYouTubeId } from "@/lib/youtube";
 
 import styles from "./UploadPanel.module.css";
 
 export interface UploadResult {
   /** Playable audio. Undefined => silent/demo mode (e.g. a chart with no audio). */
   audioUrl?: string;
+  /** YouTube video id when the source is an embedded YouTube video. */
+  youtubeId?: string;
   chart: RhythmChart;
   fileName: string;
   contributor: string;
@@ -45,7 +48,15 @@ export interface UploadResult {
 
 interface UploadPanelProps {
   onReady: (result: UploadResult) => void;
+  /**
+   * Restrict to the YouTube-link source only (no local file/folder pickers).
+   * Used on the Tesla browser, which can't open local files but can embed
+   * YouTube.
+   */
+  youtubeOnly?: boolean;
 }
+
+type UploadMode = "file" | "youtube";
 
 interface FileMeta {
   name: string;
@@ -147,7 +158,8 @@ async function folderFilesFromDrop(dt: DataTransfer): Promise<NamedFile[] | null
   return out;
 }
 
-export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
+export function UploadPanel({ onReady, youtubeOnly = false }: UploadPanelProps): React.JSX.Element {
+  const [mode, setMode] = useState<UploadMode>(youtubeOnly ? "youtube" : "file");
   const [meta, setMeta] = useState<FileMeta | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
@@ -158,6 +170,11 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [info, setInfo] = useState<string | null>(null);
+
+  // YouTube-link source.
+  const [ytUrl, setYtUrl] = useState("");
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytLength, setYtLength] = useState("3:00");
 
   // Clone Hero import state.
   const [chPkg, setChPkg] = useState<CloneHeroPackage | null>(null);
@@ -303,8 +320,9 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
 
   // Make the whole page a drop target. Dropping a file/folder anywhere on the
   // upload screen works (and the browser won't try to open it), which is far
-  // more forgiving than aiming for the dashed box.
+  // more forgiving than aiming for the dashed box. Disabled in YouTube mode.
   useEffect(() => {
+    if (mode !== "file") return;
     const hasFiles = (e: DragEvent): boolean =>
       Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
@@ -332,7 +350,32 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
       window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onWindowDrop);
     };
-  }, [handleDataTransfer]);
+  }, [mode, handleDataTransfer]);
+
+  const handleYouTube = useCallback(() => {
+    setError(null);
+    setInfo(null);
+    const id = parseYouTubeId(ytUrl);
+    if (!id) {
+      setError("That doesn't look like a YouTube link.");
+      return;
+    }
+    const durationSeconds = parseLengthSeconds(ytLength) ?? 180;
+    const title = ytTitle.trim() || "YouTube track";
+    const chart = generateAutoChart({
+      durationSeconds,
+      difficulty,
+      bpm,
+      title,
+      artist: "YouTube",
+    });
+    onReady({
+      youtubeId: id,
+      chart,
+      fileName: title,
+      contributor: contributor.trim() || "You",
+    });
+  }, [ytUrl, ytLength, ytTitle, difficulty, bpm, contributor, onReady]);
 
   const canGenerate = audioUrl !== null && meta !== null && !analyzing;
 
@@ -421,6 +464,27 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
 
   return (
     <div className={styles.panel}>
+      {!youtubeOnly && (
+        <div className={styles.segmented}>
+          <button
+            type="button"
+            className={`${styles.segBtn} ${mode === "file" ? styles.segActive : ""}`}
+            onClick={() => setMode("file")}
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            className={`${styles.segBtn} ${mode === "youtube" ? styles.segActive : ""}`}
+            onClick={() => setMode("youtube")}
+          >
+            YouTube link
+          </button>
+        </div>
+      )}
+
+      {mode === "file" && (
+        <>
       {dragActive && (
         <div className={styles.dragOverlay}>
           <div className={styles.dragOverlayInner}>
@@ -473,13 +537,104 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
         …or just drag &amp; drop a file <strong>or a folder</strong> anywhere on
         this page.
       </p>
+        </>
+      )}
+
+      {mode === "youtube" && (
+        <>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>YouTube link</span>
+            <input
+              type="url"
+              inputMode="url"
+              className={styles.textInput}
+              placeholder="https://www.youtube.com/watch?v=…"
+              value={ytUrl}
+              onChange={(e) => setYtUrl(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>Title (for the catalog)</span>
+            <input
+              type="text"
+              className={styles.textInput}
+              placeholder="YouTube track"
+              maxLength={80}
+              value={ytTitle}
+              onChange={(e) => setYtTitle(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>Difficulty</span>
+            <div className={styles.difficulties}>
+              {DIFFICULTIES.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className={`${styles.diffBtn} ${difficulty === d ? styles.diffActive : ""}`}
+                  onClick={() => setDifficulty(d)}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.fieldRow}>
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>Song length (m:ss)</span>
+              <input
+                type="text"
+                className={styles.bpmInput}
+                placeholder="3:00"
+                value={ytLength}
+                onChange={(e) => setYtLength(e.target.value)}
+              />
+            </div>
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>BPM</span>
+              <input
+                type="number"
+                className={styles.bpmInput}
+                min={40}
+                max={300}
+                value={bpm}
+                onChange={(e) =>
+                  setBpm(Math.max(40, Math.min(300, Number(e.target.value) || 120)))
+                }
+              />
+            </div>
+          </div>
+
+          <div className={styles.fieldRow}>{nameField}</div>
+
+          <button
+            type="button"
+            className={styles.generate}
+            disabled={ytUrl.trim().length === 0}
+            onClick={handleYouTube}
+          >
+            Add &amp; play
+          </button>
+
+          <p className={styles.note}>
+            The video plays in an embedded player (audio isn&apos;t downloaded).
+            Notes are placed on a BPM grid since the audio can&apos;t be analyzed,
+            and timing is looser than uploaded files — use the calibration control
+            on the play screen to line it up. Ads on non-Premium accounts may
+            interrupt playback.
+          </p>
+        </>
+      )}
 
       {error && <div className={styles.notice}>{error}</div>}
       {info && <div className={styles.info}>{info}</div>}
       {inspecting && <div className={styles.info}>Reading Clone Hero song…</div>}
 
       {/* Clone Hero import branch */}
-      {chPkg && (
+      {mode === "file" && chPkg && (
         <>
           <dl className={styles.meta}>
             <Row label="Imported" value={chPkg.metadata.name} />
@@ -533,7 +688,7 @@ export function UploadPanel({ onReady }: UploadPanelProps): React.JSX.Element {
       )}
 
       {/* Audio upload branch */}
-      {!chPkg && meta && (
+      {mode === "file" && !chPkg && meta && (
         <>
           <dl className={styles.meta}>
             <Row label="File" value={meta.name} />

@@ -108,3 +108,33 @@ export async function analyzeFileToChart(
     worker.postMessage(request, [samples.buffer]);
   });
 }
+
+// Cache analyzed charts so replaying / re-navigating to a built-in track doesn't
+// re-decode and re-analyze the same audio every time.
+const urlChartCache = new Map<string, RhythmChart>();
+
+/**
+ * Analyze audio at a same-origin URL (e.g. a built-in /tracks/*.mp3) into a
+ * RhythmChart, with in-memory caching keyed by url + difficulty + bpm hint.
+ */
+export async function analyzeUrlToChart(
+  url: string,
+  options: AnalyzeFileOptions,
+): Promise<RhythmChart> {
+  const key = `${url}|${options.difficulty}|${options.bpmHint ?? ""}`;
+  const cached = urlChartCache.get(key);
+  if (cached) {
+    options.onProgress?.(1);
+    return cached;
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch audio (${response.status}).`);
+  const blob = await response.blob();
+  const name = url.split("/").pop() || "track.mp3";
+  const file = new File([blob], name, { type: blob.type || "audio/mpeg" });
+
+  const chart = await analyzeFileToChart(file, options);
+  urlChartCache.set(key, chart);
+  return chart;
+}

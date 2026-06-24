@@ -3,19 +3,17 @@
  *
  * This is the open-source "song library". Contributors add new playable tracks
  * by appending an entry to `builtInTracks` below (see CONTRIBUTING.md and
- * docs/trackCatalog.md). Because we do not host copyrighted audio, built-in
- * tracks ship WITHOUT audio and play in silent/demo mode — the chart scrolls on
- * the internal clock. A track may optionally carry an `audioUrl` (e.g. a
- * user-uploaded blob URL added at runtime).
+ * docs/trackCatalog.md). The built-in tracks ship with royalty-free audio served
+ * from /public/tracks, so the catalog is immediately playable WITH music. Their
+ * charts are derived from the audio (onset analysis) at play time; the `build()`
+ * here returns a quick BPM-grid chart that is used as an immediate fallback.
  *
- * Each track exposes a `build()` that returns the internal RhythmChart. Built-in
- * tracks build their chart lazily (via the demo chart or the deterministic
- * automapper) so we don't hold dozens of charts in memory up front.
+ * A track may also carry a runtime `audioUrl` (a user-uploaded blob URL) or a
+ * `youtubeId` (embedded YouTube video).
  */
 
 import { generateAutoChart } from "@/game/autoMapper";
 import { chartDurationMs } from "@/game/chartUtils";
-import { createDemoChart } from "@/game/demoChart";
 import type { Difficulty, RhythmChart } from "@/game/types";
 import type { ActiveSong } from "@/lib/activeSong";
 
@@ -36,17 +34,20 @@ export interface CatalogTrack {
   source: TrackSource;
   /** Optional playable audio. Undefined => silent/demo mode. */
   audioUrl?: string;
+  /** YouTube video id when the track plays from an embedded YouTube video. */
+  youtubeId?: string;
   /** Lazily construct the playable chart. */
   build: () => RhythmChart;
 }
 
-/** Metadata for an auto-generated built-in track (no hand-authored chart). */
-type AutoTrackMeta = Omit<CatalogTrack, "source" | "build" | "audioUrl">;
+/** Metadata for a built-in royalty-free audio track. */
+type BuiltInMeta = Omit<CatalogTrack, "source" | "build">;
 
-function autoTrack(meta: AutoTrackMeta): CatalogTrack {
+function builtInTrack(meta: BuiltInMeta): CatalogTrack {
   return {
     ...meta,
     source: "built-in",
+    // Immediate grid fallback; /play upgrades this to an onset-matched chart.
     build: () =>
       generateAutoChart({
         durationSeconds: meta.durationSeconds,
@@ -59,62 +60,43 @@ function autoTrack(meta: AutoTrackMeta): CatalogTrack {
 }
 
 /**
- * The curated, open-source track list. Add new tracks here via a PR.
- * Keep them silent/demo (no audioUrl) unless you have the rights to host audio.
+ * The curated, open-source track list. These ship with royalty-free audio.
+ * Add new tracks here via a PR (drop the audio in /public/tracks). Only add
+ * audio you have the rights to host.
  */
 const builtInTracks: CatalogTrack[] = [
-  {
-    id: "highway-demo",
-    title: "Highway Demo",
-    artist: "Slop Hero",
+  builtInTrack({
+    id: "galactic-rap",
+    title: "Galactic Rap",
+    artist: "Royalty-free",
     contributor: "Slop Hero Team",
-    contributorUrl: "https://github.com/",
     difficulty: "medium",
-    bpm: 120,
-    durationSeconds: 22,
+    bpm: 90,
+    durationSeconds: 142,
     addedAt: "2026-06-24",
-    source: "built-in",
-    build: () => createDemoChart(),
-  },
-  autoTrack({
-    id: "first-lap",
-    title: "First Lap",
-    artist: "Generated",
+    audioUrl: "/tracks/galactic-rap.mp3",
+  }),
+  builtInTrack({
+    id: "mesmerizing-galaxy-loop",
+    title: "Mesmerizing Galaxy Loop",
+    artist: "Royalty-free",
     contributor: "Slop Hero Team",
     difficulty: "easy",
-    bpm: 100,
-    durationSeconds: 60,
+    bpm: 120,
+    durationSeconds: 93,
     addedAt: "2026-06-24",
+    audioUrl: "/tracks/mesmerizing-galaxy-loop.mp3",
   }),
-  autoTrack({
-    id: "midnight-grid",
-    title: "Midnight Grid",
-    artist: "Generated",
-    contributor: "Slop Hero Team",
-    difficulty: "medium",
-    bpm: 124,
-    durationSeconds: 80,
-    addedAt: "2026-06-24",
-  }),
-  autoTrack({
-    id: "neon-drift",
-    title: "Neon Drift",
-    artist: "Generated",
+  builtInTrack({
+    id: "pleasant-porridge",
+    title: "Pleasant Porridge",
+    artist: "Royalty-free",
     contributor: "Slop Hero Team",
     difficulty: "hard",
-    bpm: 140,
-    durationSeconds: 95,
+    bpm: 110,
+    durationSeconds: 171,
     addedAt: "2026-06-24",
-  }),
-  autoTrack({
-    id: "solar-flare",
-    title: "Solar Flare",
-    artist: "Generated",
-    contributor: "Slop Hero Team",
-    difficulty: "expert",
-    bpm: 160,
-    durationSeconds: 70,
-    addedAt: "2026-06-24",
+    audioUrl: "/tracks/pleasant-porridge.mp3",
   }),
 ];
 
@@ -152,11 +134,20 @@ export function pickRandomTrack(): CatalogTrack {
 
 /** Convert a catalog track into the active-song hand-off shape for /play. */
 export function trackToActiveSong(track: CatalogTrack): ActiveSong {
+  // Built-in audio tracks ask /play to derive the chart from the audio so notes
+  // match the music. Uploads were already analyzed, so they skip this.
+  const analyze =
+    track.source === "built-in" && track.audioUrl
+      ? { difficulty: track.difficulty, bpmHint: track.bpm, artist: track.artist }
+      : undefined;
+
   return {
     chart: track.build(),
     audioUrl: track.audioUrl,
+    youtubeId: track.youtubeId,
     title: track.title,
     subtitle: `${track.artist} · added by ${track.contributor}`,
+    analyze,
   };
 }
 

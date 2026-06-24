@@ -11,7 +11,11 @@ import { setActiveSong } from "@/lib/activeSong";
 
 import styles from "./upload.module.css";
 
-export function UploadClient(): React.JSX.Element {
+export function UploadClient({
+  youtubeOnly = false,
+}: {
+  youtubeOnly?: boolean;
+}): React.JSX.Element {
   const router = useRouter();
 
   const handleReady = useCallback(
@@ -29,6 +33,7 @@ export function UploadClient(): React.JSX.Element {
         addedAt: new Date().toISOString().slice(0, 10),
         source: "session",
         audioUrl: result.audioUrl,
+        youtubeId: result.youtubeId,
         build: () => result.chart,
       };
       addSessionTrack(track);
@@ -48,17 +53,26 @@ export function UploadClient(): React.JSX.Element {
 
       <section className={styles.body}>
         <div className={styles.intro}>
-          <h1 className={styles.title}>Upload a song</h1>
+          <h1 className={styles.title}>Add a song</h1>
           <p className={styles.subtitle}>
-            Pick an audio file or a Clone Hero song (.sng / .zip / .chart / .mid).
-            It stays in your browser — nothing is uploaded to a server. We&apos;ll
-            generate a playable chart — by analyzing the audio, on a quick BPM
-            grid, or by importing the Clone Hero chart — and add it to the catalog
-            for this session.
+            {youtubeOnly ? (
+              <>
+                Paste a YouTube link and we&apos;ll play it in an embedded player
+                with a generated chart. (File upload isn&apos;t available on the
+                Tesla browser.)
+              </>
+            ) : (
+              <>
+                Pick an audio file or Clone Hero song (.sng / .zip / .chart /
+                .mid), or paste a YouTube link. Files stay in your browser —
+                nothing is uploaded to a server. We&apos;ll generate a playable
+                chart and add it to the catalog for this session.
+              </>
+            )}
           </p>
         </div>
 
-        <UploadPanel onReady={handleReady} />
+        <UploadPanel onReady={handleReady} youtubeOnly={youtubeOnly} />
 
         <p className={styles.demoLink}>
           Browse the <Link href="/catalog">track catalog →</Link>

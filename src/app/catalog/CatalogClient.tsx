@@ -22,7 +22,7 @@ const DIFF_COLOR: Record<string, string> = {
   expert: LANE_COLORS[1],
 };
 
-export function CatalogClient({ isTesla }: { isTesla: boolean }): React.JSX.Element {
+export function CatalogClient(): React.JSX.Element {
   const router = useRouter();
   // Snapshot the catalog once on mount (includes any session uploads).
   const [tracks] = useState<CatalogTrack[]>(() => getCatalog());
@@ -55,17 +55,13 @@ export function CatalogClient({ isTesla }: { isTesla: boolean }): React.JSX.Elem
       <div className={styles.intro}>
         <h1 className={styles.title}>Track catalog</h1>
         <p className={styles.subtitle}>
-          Every playable track and who added it. Built-in tracks ship without
-          audio and play in demo mode. Want to add yours?{" "}
-          {!isTesla && (
-            <>
-              <Link href="/upload" className={styles.inlineLink}>
-                Upload a song
-              </Link>{" "}
-              or{" "}
-            </>
-          )}
-          open a PR — see <span className={styles.code}>CONTRIBUTING.md</span>.
+          Every playable track and who added it. Built-in tracks come with
+          royalty-free music and charts matched to the audio. Want to add
+          yours?{" "}
+          <Link href="/upload" className={styles.inlineLink}>
+            Upload a song
+          </Link>{" "}
+          or open a PR — see <span className={styles.code}>CONTRIBUTING.md</span>.
         </p>
       </div>
 

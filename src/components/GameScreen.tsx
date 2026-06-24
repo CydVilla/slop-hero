@@ -28,11 +28,14 @@ import { accuracyPercent } from "@/game/scoring";
 import type { RhythmChart } from "@/game/types";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import { useRhythmGame } from "@/hooks/useRhythmGame";
+import { useYouTubeEngine } from "@/hooks/useYouTubeEngine";
 
 interface GameScreenProps {
   chart: RhythmChart;
   /** blob: URL for uploaded audio. Omit for demo/silent mode. */
   audioUrl?: string;
+  /** YouTube video id — when set, audio/timing come from the embedded player. */
+  youtubeId?: string;
   title: string;
   /** Optional secondary line (artist · contributor). */
   subtitle?: string;
@@ -41,10 +44,17 @@ interface GameScreenProps {
 export function GameScreen({
   chart,
   audioUrl,
+  youtubeId,
   title,
   subtitle,
 }: GameScreenProps): React.JSX.Element {
-  const audio = useAudioEngine();
+  // Both engines are instantiated (rules of hooks), but only the selected one is
+  // ever driven. The Web Audio engine stays inert until loaded/played, and the
+  // YouTube engine only creates a player when given a video id.
+  const webAudio = useAudioEngine();
+  const youtube = useYouTubeEngine(youtubeId);
+  const audio = youtubeId ? youtube.engine : webAudio;
+
   const game = useRhythmGame(chart, audio);
   const { tapLane, togglePause, start, restart } = game;
 
@@ -53,10 +63,12 @@ export function GameScreen({
   const tailMs = 2000;
   const durationMs = useMemo(() => chartDurationMs(chart) + tailMs, [chart]);
 
-  // Load audio (or silent demo timeline) when the song changes.
+  // Load audio (or silent demo timeline) when the song changes. In YouTube mode
+  // the engine self-loads from the video id, so skip this entirely.
   const loadFromUrl = audio.loadFromUrl;
   const loadSilent = audio.loadSilent;
   useEffect(() => {
+    if (youtubeId) return;
     let cancelled = false;
     if (audioUrl) {
       loadFromUrl(audioUrl).catch(() => {
@@ -68,7 +80,7 @@ export function GameScreen({
     return () => {
       cancelled = true;
     };
-  }, [audioUrl, durationMs, loadFromUrl, loadSilent]);
+  }, [youtubeId, audioUrl, durationMs, loadFromUrl, loadSilent]);
 
   // Keyboard input (desktop testing only): A/S/D/F/G lanes, Space play/pause.
   // The primary input is tapping the notes directly on the highway.
@@ -107,6 +119,8 @@ export function GameScreen({
   const showStart = game.phase === "idle";
   const showPaused = game.phase === "paused";
   const showFinished = game.phase === "finished";
+  // In YouTube mode the player must be ready before we can start playback.
+  const ytLoading = Boolean(youtubeId) && audio.status !== "ready";
 
   return (
     <div className={styles.screen}>
@@ -140,6 +154,14 @@ export function GameScreen({
           onLaneTap={tapLane}
         />
 
+        {youtubeId && (
+          <div
+            ref={youtube.containerRef}
+            className={styles.ytPlayer}
+            aria-label="YouTube audio source"
+          />
+        )}
+
         <div className={`${styles.overlay} ${styles.overlayTopLeft}`}>
           <ScorePanel score={game.score} />
         </div>
@@ -156,10 +178,15 @@ export function GameScreen({
 
         {showStart && (
           <Splash
-            title="Ready?"
-            subtitle="Tap each note as it reaches the line. (Desktop: A S D F G.)"
+            title={ytLoading ? "Loading video…" : "Ready?"}
+            subtitle={
+              ytLoading
+                ? "Getting the YouTube player ready."
+                : "Tap each note as it reaches the line. (Desktop: A S D F G.)"
+            }
             actionLabel="Start"
             onAction={start}
+            disabled={ytLoading}
           />
         )}
 
@@ -198,6 +225,7 @@ function Splash({
   onAction,
   secondaryLabel,
   onSecondary,
+  disabled,
 }: {
   title: string;
   subtitle: string;
@@ -205,6 +233,7 @@ function Splash({
   onAction: () => void;
   secondaryLabel?: string;
   onSecondary?: () => void;
+  disabled?: boolean;
 }): React.JSX.Element {
   return (
     <div className={styles.splash}>
@@ -212,7 +241,12 @@ function Splash({
         <h2 className={styles.splashTitle}>{title}</h2>
         <p className={styles.splashSubtitle}>{subtitle}</p>
         <div className={styles.splashActions}>
-          <button type="button" className={styles.primaryBtn} onClick={onAction}>
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            onClick={onAction}
+            disabled={disabled}
+          >
             {actionLabel}
           </button>
           {secondaryLabel && onSecondary && (
