@@ -1,0 +1,42 @@
+name: CI
+
+# The gate that decides whether a dependency update "breaks something".
+# Dependabot's auto-merge waits for this workflow to pass before merging, so any
+# update that fails typecheck or build stays open for manual review instead of
+# landing on main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Avoid piling up redundant runs on rapid pushes to the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build

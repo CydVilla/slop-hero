@@ -1,0 +1,44 @@
+# Keep dependencies up to date automatically.
+#
+# Dependabot opens PRs for new versions; the CI workflow (.github/workflows/ci.yml)
+# typechecks + builds each one, and the auto-merge workflow
+# (.github/workflows/dependabot-auto-merge.yml) merges the non-breaking ones once
+# CI is green. Major (potentially breaking) updates are grouped on their own and
+# left open for a human to review.
+
+version: 2
+updates:
+  # Application + tooling dependencies (npm).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+    groups:
+      # Bundle all minor + patch bumps into one PR so they can be reviewed and
+      # auto-merged together. These are the "safe to auto-update" changes.
+      non-major:
+        update-types:
+          - minor
+          - patch
+      # Keep majors grouped per-package (one PR each) for deliberate review.
+      major:
+        update-types:
+          - major
+
+  # Keep the GitHub Actions used in workflows up to date too.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+    commit-message:
+      prefix: ci
