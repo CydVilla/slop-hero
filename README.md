@@ -51,6 +51,36 @@ npm run typecheck  # tsc --noEmit
 npm run lint       # next lint
 ```
 
+### Dependencies & automated updates
+
+Dependencies are kept current automatically:
+
+- **[Dependabot](.github/dependabot.yml)** opens PRs weekly for npm packages and
+  GitHub Actions. Minor/patch bumps are grouped into a single "non-major" PR;
+  majors get their own PR.
+- **[CI](.github/workflows/ci.yml)** runs `npm ci`, `npm run typecheck`, and
+  `npm run build` on every PR. This is the gate that decides whether an update
+  "breaks something".
+- **[Auto-merge](.github/workflows/dependabot-auto-merge.yml)** approves and
+  enables auto-merge for non-breaking (minor/patch) Dependabot PRs. GitHub then
+  merges them **only after CI passes**. **Major** updates are left open with a
+  comment so a human can review the breaking change.
+
+One-time repo settings a maintainer must enable for auto-merge to work:
+
+1. **Settings → General → Pull Requests → "Allow auto-merge"**.
+2. A **branch protection rule on `main`** that requires the `Typecheck & build`
+   status check. Without a required check, GitHub merges as soon as the PR is
+   mergeable instead of waiting for CI.
+
+To update everything manually at any time:
+
+```bash
+npx npm-check-updates -u   # bump package.json to latest
+npm install
+npm run typecheck && npm run build
+```
+
 ## How to play
 
 1. Open `/play` (or pick a track from `/catalog`, or upload a song first).
