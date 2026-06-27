@@ -195,6 +195,11 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
     return a.anchorMs + (performance.now() - a.anchorPerf);
   }, []);
 
+  // No-op: the YouTube player is unlocked by its own playVideo() call, which is
+  // already invoked from a user gesture. Present so the engine matches the
+  // shared AudioEngine interface.
+  const resume = useCallback(async (): Promise<void> => {}, []);
+
   const play = useCallback(async (fromMs?: number): Promise<void> => {
     const p = playerRef.current;
     if (!p) return;
@@ -239,13 +244,14 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
       durationMs,
       loadFromUrl,
       loadSilent,
+      resume,
       play,
       pause,
       stop,
       getTimeMs,
       setVolume,
     }),
-    [status, isPlaying, durationMs, loadFromUrl, loadSilent, play, pause, stop, getTimeMs, setVolume],
+    [status, isPlaying, durationMs, loadFromUrl, loadSilent, resume, play, pause, stop, getTimeMs, setVolume],
   );
 
   return { engine, containerRef };

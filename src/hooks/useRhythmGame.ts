@@ -39,6 +39,12 @@ import type {
 
 /** Minimal audio surface the game needs; keeps the hooks loosely coupled. */
 export interface GameAudioControls {
+  /**
+   * Unlock/resume the audio clock. Called synchronously from the Start gesture
+   * so the (otherwise suspended) AudioContext is running before the countdown's
+   * timer fires play() — a deferred resume is blocked by browser autoplay rules.
+   */
+  resume?: () => Promise<void> | void;
   play: (fromMs?: number) => Promise<void> | void;
   pause: () => void;
   stop: () => void;
@@ -165,6 +171,11 @@ export function useRhythmGame(
   // instant they tap Start. Audio only begins once the count hits zero.
   const beginCountdown = useCallback(() => {
     clearCountdownTimer();
+    // Unlock the audio clock NOW, while we're still inside the Start gesture's
+    // call stack. The countdown's setInterval fires play() ~3s later — too late
+    // to resume a suspended AudioContext — so without this the clock never
+    // advances and the highway appears frozen.
+    void audio.resume?.();
     audio.stop();
     resetGameState();
 

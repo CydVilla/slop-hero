@@ -31,6 +31,12 @@ export interface AudioEngine {
   loadFromUrl: (url: string) => Promise<number>;
   /** Switch to silent/demo mode with a fixed duration (ms). */
   loadSilent: (durationMs: number) => void;
+  /**
+   * Resume (unlock) the underlying AudioContext. MUST be called from within a
+   * user-gesture handler — browsers refuse to start/resume audio otherwise, and
+   * a suspended context's clock never advances. Safe to call repeatedly.
+   */
+  resume: () => Promise<void>;
   /** Start (or resume) playback from an optional position in ms. */
   play: (fromMs?: number) => Promise<void>;
   pause: () => void;
@@ -145,6 +151,18 @@ export function useAudioEngine(): AudioEngine {
     setIsPlaying(false);
   }, []);
 
+  const resume = useCallback(async (): Promise<void> => {
+    const s = ref.current;
+    const ctx = getOrCreateContext(s);
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        // Resume can reject if not called from a gesture; the next gesture retries.
+      }
+    }
+  }, []);
+
   const play = useCallback(
     async (fromMs?: number): Promise<void> => {
       const s = ref.current;
@@ -235,6 +253,7 @@ export function useAudioEngine(): AudioEngine {
       durationMs,
       loadFromUrl,
       loadSilent,
+      resume,
       play,
       pause,
       stop,
@@ -247,6 +266,7 @@ export function useAudioEngine(): AudioEngine {
       durationMs,
       loadFromUrl,
       loadSilent,
+      resume,
       play,
       pause,
       stop,
