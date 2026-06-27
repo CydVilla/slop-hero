@@ -117,6 +117,7 @@ export function GameScreen({
   }, [game.phase, getTimeMs, calibrationOffsetMs, chart.offsetMs]);
 
   const showStart = game.phase === "idle";
+  const showCountdown = game.phase === "countdown";
   const showPaused = game.phase === "paused";
   const showFinished = game.phase === "finished";
   // In YouTube mode the player must be ready before we can start playback.
@@ -142,25 +143,28 @@ export function GameScreen({
       </header>
 
       <div className={styles.stage}>
-        <GameCanvas
-          chart={chart}
-          phase={game.phase}
-          getTimeMs={audio.getTimeMs}
-          getCalibrationOffsetMs={game.getCalibrationOffsetMs}
-          runtimeRef={game.runtimeRef}
-          feedbackRef={game.feedbackRef}
-          laneFlashRef={game.laneFlashRef}
-          onFrame={game.update}
-          onLaneTap={tapLane}
-        />
-
         {youtubeId && (
           <div
             ref={youtube.containerRef}
-            className={styles.ytPlayer}
+            className={styles.ytBackground}
             aria-label="YouTube audio source"
           />
         )}
+
+        <div className={styles.canvasLayer}>
+          <GameCanvas
+            chart={chart}
+            phase={game.phase}
+            getTimeMs={audio.getTimeMs}
+            getCalibrationOffsetMs={game.getCalibrationOffsetMs}
+            runtimeRef={game.runtimeRef}
+            feedbackRef={game.feedbackRef}
+            laneFlashRef={game.laneFlashRef}
+            onFrame={game.update}
+            onLaneTap={tapLane}
+            combo={game.score.combo}
+          />
+        </div>
 
         <div className={`${styles.overlay} ${styles.overlayTopLeft}`}>
           <ScorePanel score={game.score} />
@@ -188,6 +192,15 @@ export function GameScreen({
             onAction={start}
             disabled={ytLoading}
           />
+        )}
+
+        {showCountdown && (
+          <div className={styles.countdown} aria-live="assertive" role="status">
+            <span key={game.countdown} className={styles.countdownNumber}>
+              {game.countdown}
+            </span>
+            <span className={styles.countdownHint}>Get ready…</span>
+          </div>
         )}
 
         {showPaused && (

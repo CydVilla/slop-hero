@@ -89,28 +89,102 @@
   right: 12px;
 }
 
-/* Embedded YouTube player. Kept visible (required by YouTube's ToS) but small
-   and out of the way; pointer-events are disabled so taps fall through to the
-   highway and a stray tap can't pause/desync the video. */
-.ytPlayer {
+/* The note highway sits on its own layer above the (optional) video backdrop. */
+.canvasLayer {
   position: absolute;
-  bottom: 12px;
-  left: 12px;
-  width: clamp(120px, 18vw, 200px);
-  aspect-ratio: 16 / 9;
-  z-index: 4;
-  border-radius: 10px;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Embedded YouTube player as a dim, full-stage backdrop. It stays visible and
+   playing (required by YouTube's ToS) but is dropped to low opacity and pushed
+   behind the highway so it sets the mood without competing with the notes.
+   pointer-events are disabled so taps fall through to the highway and a stray
+   tap can't pause/desync the video. */
+.ytBackground {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0.22;
   pointer-events: none;
   background: #000;
 }
 
-.ytPlayer :global(iframe) {
-  width: 100%;
-  height: 100%;
+/* Blow the 16:9 iframe up so it always covers the stage (no letterboxing),
+   centred, with any overflow clipped by the container. */
+.ytBackground :global(iframe) {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 177.78vh; /* 16/9 of the viewport height */
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 56.25vw; /* 9/16 of the viewport width */
+  transform: translate(-50%, -50%);
   display: block;
+  border: 0;
+  pointer-events: none;
+}
+
+/* Pre-song countdown ------------------------------------------------------ */
+
+.countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(5, 6, 10, 0.45);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.countdownNumber {
+  font-size: clamp(96px, 24vw, 220px);
+  font-weight: 850;
+  line-height: 1;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 40px rgba(34, 197, 94, 0.6), 0 0 12px rgba(255, 255, 255, 0.4);
+  animation: countdownPop 1s ease-out forwards;
+}
+
+.countdownHint {
+  font-size: clamp(14px, 3vw, 20px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Each tick re-mounts the number (via key), replaying this pop + fade. */
+@keyframes countdownPop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  25% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  60% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .countdownNumber {
+    animation: none;
+  }
 }
 
 /* Splash / overlays ------------------------------------------------------- */

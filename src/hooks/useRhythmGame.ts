@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { FEEDBACK_DURATION_MS } from "@/game/constants";
+import { COUNTDOWN_MS, FEEDBACK_DURATION_MS } from "@/game/constants";
 import { createRuntimeState, makeNoteId, chartDurationMs } from "@/game/chartUtils";
 import {
   applyHit,
@@ -48,6 +48,11 @@ export interface GameAudioControls {
 export interface RhythmGame {
   phase: GamePhase;
   score: ScoreState;
+  /**
+   * Seconds remaining in the pre-song countdown (3, 2, 1). Only meaningful while
+   * `phase === "countdown"`; 0 otherwise.
+   */
+  countdown: number;
   calibrationOffsetMs: number;
   /** Refs consumed by the renderer (do not read in JSX render path). */
   runtimeRef: React.RefObject<Map<string, NoteRuntimeState>>;
@@ -79,7 +84,12 @@ export function useRhythmGame(
   const [score, setScore] = useState<ScoreState>(() =>
     createInitialScore(chart.notes.length),
   );
+  const [countdown, setCountdown] = useState(0);
   const [calibrationOffsetMs, setCalibrationOffsetMs] = useState(0);
+
+  // Pending interval id for the pre-song countdown, so we can cancel it if the
+  // player restarts/pauses mid-count or the component unmounts.
+  const countdownTimerRef = useRef<number | null>(null);
 
   const runtimeRef = useRef<Map<string, NoteRuntimeState>>(
     createRuntimeState(chart),
@@ -100,15 +110,27 @@ export function useRhythmGame(
     calibrationRef.current = calibrationOffsetMs;
   }, [calibrationOffsetMs]);
 
+  const clearCountdownTimer = useCallback(() => {
+    if (countdownTimerRef.current !== null) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }, []);
+
   // Re-initialise everything when the chart instance changes.
   useEffect(() => {
+    clearCountdownTimer();
     runtimeRef.current = createRuntimeState(chart);
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
     durationRef.current = chartDurationMs(chart);
     setScore(createInitialScore(chart.notes.length));
+    setCountdown(0);
     setPhase("idle");
-  }, [chart]);
+  }, [chart, clearCountdownTimer]);
+
+  // Cancel any in-flight countdown when the hook unmounts.
+  useEffect(() => clearCountdownTimer, [clearCountdownTimer]);
 
   const getCalibrationOffsetMs = useCallback(() => calibrationRef.current, []);
 
@@ -138,18 +160,38 @@ export function useRhythmGame(
     setScore(createInitialScore(chart.notes.length));
   }, [chart]);
 
-  const start = useCallback(() => {
-    resetGameState();
-    setPhase("playing");
-    void audio.play(0);
-  }, [audio, resetGameState]);
-
-  const restart = useCallback(() => {
+  // Run a short "3, 2, 1" countdown, then start the song from the top. This
+  // gives the player a beat to get ready so the opening notes aren't missed the
+  // instant they tap Start. Audio only begins once the count hits zero.
+  const beginCountdown = useCallback(() => {
+    clearCountdownTimer();
     audio.stop();
     resetGameState();
-    setPhase("playing");
-    void audio.play(0);
-  }, [audio, resetGameState]);
+
+    let remaining = Math.max(1, Math.round(COUNTDOWN_MS / 1000));
+    setCountdown(remaining);
+    setPhase("countdown");
+
+    countdownTimerRef.current = window.setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearCountdownTimer();
+        setCountdown(0);
+        setPhase("playing");
+        void audio.play(0);
+      } else {
+        setCountdown(remaining);
+      }
+    }, 1000);
+  }, [audio, resetGameState, clearCountdownTimer]);
+
+  const start = useCallback(() => {
+    beginCountdown();
+  }, [beginCountdown]);
+
+  const restart = useCallback(() => {
+    beginCountdown();
+  }, [beginCountdown]);
 
   const togglePause = useCallback(() => {
     // Branch on the ref (avoids nesting side-effects inside a setState updater).
@@ -160,13 +202,17 @@ export function useRhythmGame(
     } else if (current === "paused") {
       void audio.play();
       setPhase("playing");
+    } else if (current === "countdown") {
+      // Cancel the countdown and return to the ready screen.
+      clearCountdownTimer();
+      audio.stop();
+      setCountdown(0);
+      setPhase("idle");
     } else if (current === "idle" || current === "finished") {
-      // Treat as a fresh start.
-      resetGameState();
-      setPhase("playing");
-      void audio.play(0);
+      // Treat as a fresh start (with the same countdown).
+      beginCountdown();
     }
-  }, [audio, resetGameState]);
+  }, [audio, beginCountdown, clearCountdownTimer]);
 
   const tapLane = useCallback(
     (lane: Lane) => {
@@ -254,6 +300,7 @@ export function useRhythmGame(
     () => ({
       phase,
       score,
+      countdown,
       calibrationOffsetMs,
       runtimeRef,
       feedbackRef,
@@ -270,6 +317,7 @@ export function useRhythmGame(
     [
       phase,
       score,
+      countdown,
       calibrationOffsetMs,
       getCalibrationOffsetMs,
       start,

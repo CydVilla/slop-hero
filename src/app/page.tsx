@@ -32,7 +32,7 @@ export default function LandingPage(): React.JSX.Element {
             Browse catalog
           </Link>
           <Link href="/upload" className={`${styles.btn} ${styles.btnSecondary}`}>
-            Upload song
+            Add a song
           </Link>
         </div>
 

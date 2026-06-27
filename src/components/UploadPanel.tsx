@@ -474,6 +474,13 @@ export function UploadPanel({ onReady, youtubeOnly = false }: UploadPanelProps):
       setYtLength(lengthFieldFromSeconds(item.durationSeconds));
     }
     setError(null);
+    // Collapse the results menu now that a pick has been made. Clearing the
+    // query also stops the debounced search from immediately re-opening it; the
+    // chosen track stays reflected in the Title field below.
+    setYtQuery("");
+    setYtResults([]);
+    setYtSearchError(null);
+    setYtSearching(false);
   }, []);
 
   const canGenerate = audioUrl !== null && meta !== null && !analyzing;
@@ -665,6 +672,12 @@ export function UploadPanel({ onReady, youtubeOnly = false }: UploadPanelProps):
           )}
 
           {ytSearchError && <div className={styles.info}>{ytSearchError}</div>}
+
+          {ytSelectedId && ytResults.length === 0 && !ytSearching && (
+            <div className={styles.searchStatus}>
+              Selected ✓ — adjust the details below, or search again to change it.
+            </div>
+          )}
 
           {ytResults.length > 0 && (
             <ul className={styles.results}>

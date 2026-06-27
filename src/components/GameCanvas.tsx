@@ -44,6 +44,8 @@ interface GameCanvasProps {
   onFrame: (songTimeMs: number) => void;
   /** Player tapped a lane column on the highway (the primary touch input). */
   onLaneTap?: (lane: Lane) => void;
+  /** Current combo, used to drive escalating "on fire" visuals. */
+  combo?: number;
 }
 
 /** A short-lived touch ripple drawn where the player's finger landed. */
@@ -54,7 +56,32 @@ interface TapRipple {
   color: string;
 }
 
+/** A single spark thrown off when a note is judged. */
+interface Particle {
+  x: number;
+  y: number;
+  /** Velocity in px/ms. */
+  vx: number;
+  vy: number;
+  createdAtMs: number;
+  lifeMs: number;
+  size: number;
+  color: string;
+}
+
+/** An expanding ring that pops at the hit pad on a successful hit. */
+interface HitRing {
+  cx: number;
+  cy: number;
+  createdAtMs: number;
+  color: string;
+  /** Scales ring size + brightness with the judgement quality. */
+  strength: number;
+}
+
 const TAP_RIPPLE_MS = 360;
+const PARTICLE_GRAVITY = 0.0011; // px/ms^2, pulls sparks back down
+const HIT_RING_MS = 420;
 
 const HIT_LINE_RATIO = 0.82; // hit line position from top (0..1)
 const RATING_LABEL: Record<HitFeedback["rating"], string> = {
@@ -80,9 +107,15 @@ export function GameCanvas({
   laneFlashRef,
   onFrame,
   onLaneTap,
+  combo = 0,
 }: GameCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ripplesRef = useRef<TapRipple[]>([]);
+  const particlesRef = useRef<Particle[]>([]);
+  const ringsRef = useRef<HitRing[]>([]);
+  // Feedback ids already turned into bursts, so each hit only sparks once even
+  // though the feedback entry lingers for a few frames.
+  const sparkedRef = useRef<Set<string>>(new Set());
   // Mirror frequently-changing props into refs so the rAF loop, which is set up
   // once, always sees the latest values without re-subscribing.
   const propsRef = useRef({
@@ -92,6 +125,7 @@ export function GameCanvas({
     getCalibrationOffsetMs,
     onFrame,
     onLaneTap,
+    combo,
   });
   propsRef.current = {
     chart,
@@ -100,6 +134,7 @@ export function GameCanvas({
     getCalibrationOffsetMs,
     onFrame,
     onLaneTap,
+    combo,
   };
 
   // Pointer-down anywhere on the highway: figure out the lane column under the
@@ -161,6 +196,7 @@ export function GameCanvas({
         getTimeMs: getT,
         getCalibrationOffsetMs: getCal,
         onFrame: frame,
+        combo: currentCombo,
       } = propsRef.current;
 
       const t = getT();
@@ -171,13 +207,29 @@ export function GameCanvas({
       const h = cssHeight;
       const laneW = w / LANE_COUNT;
       const hitLineY = h * HIT_LINE_RATIO;
+      // 0 → 1 "heat" that ramps up with the combo and saturates around 50.
+      const heat = clamp(currentCombo / 50, 0, 1);
+
+      // Turn freshly-judged feedback entries into spark bursts + pop rings.
+      spawnBurstsFromFeedback(
+        feedbackRef.current,
+        sparkedRef.current,
+        particlesRef.current,
+        ringsRef.current,
+        laneW,
+        hitLineY,
+      );
 
       ctx.clearRect(0, 0, w, h);
       drawLanes(ctx, w, h, laneW, hitLineY, laneFlashRef.current, t);
+      drawBeatLines(ctx, c, t, cal, w, hitLineY);
       drawNotes(ctx, c, t, cal, laneW, hitLineY, runtimeRef.current);
-      drawHitLine(ctx, w, laneW, hitLineY);
+      drawHitLine(ctx, w, laneW, hitLineY, heat, t);
+      drawHitRings(ctx, ringsRef.current, t);
+      drawParticles(ctx, particlesRef.current, t);
       drawFeedback(ctx, feedbackRef.current, laneW, hitLineY, t);
       drawRipples(ctx, ripplesRef.current, laneW, t);
+      drawComboGlow(ctx, w, h, heat, currentCombo, t);
 
       raf = requestAnimationFrame(draw);
     };
@@ -228,6 +280,225 @@ function drawRipples(
     ctx.fill();
     ctx.restore();
   }
+}
+
+/**
+ * Faint horizontal lines that scroll down each lane in time with the beat,
+ * giving the highway a sense of speed and pulse. Tied to the chart BPM so the
+ * motion matches the music; falls back to 120 BPM when unknown.
+ */
+function drawBeatLines(
+  ctx: CanvasRenderingContext2D,
+  chart: RhythmChart,
+  t: number,
+  cal: number,
+  w: number,
+  hitLineY: number,
+): void {
+  const bpm = chart.bpm && chart.bpm > 0 ? chart.bpm : 120;
+  const beatMs = 60000 / bpm;
+  if (!Number.isFinite(beatMs) || beatMs <= 0) return;
+
+  // Reuse the note travel math so beat lines move at the exact note speed.
+  const reference = t + chart.offsetMs;
+  const firstBeat = Math.floor((reference - hitLineY) / beatMs) * beatMs;
+
+  ctx.save();
+  ctx.lineWidth = 1;
+  for (let i = -1; i < 12; i += 1) {
+    const beatTime = firstBeat + i * beatMs;
+    const progress = noteTravelProgress({ timeMs: beatTime }, t, chart.offsetMs, cal);
+    if (progress < -0.05 || progress > 1.05) continue;
+    const y = progress * hitLineY;
+    // Brighter as it nears the hit line; every 4th beat (bar) is stronger.
+    const isBar = Math.round(beatTime / beatMs) % 4 === 0;
+    const alpha = (isBar ? 0.16 : 0.07) * clamp(progress + 0.15, 0, 1);
+    ctx.strokeStyle = rgba("#ffffff", alpha);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Spawn a spark burst (and a pop ring for hits) for any new feedback entry. */
+function spawnBurstsFromFeedback(
+  feedback: HitFeedback[] | null,
+  sparked: Set<string>,
+  particles: Particle[],
+  rings: HitRing[],
+  laneW: number,
+  hitLineY: number,
+): void {
+  if (!feedback) return;
+
+  for (const f of feedback) {
+    if (sparked.has(f.id)) continue;
+    sparked.add(f.id);
+
+    const cx = f.lane * laneW + laneW / 2;
+    const isMiss = f.rating === "miss";
+    const color = isMiss ? "#f87171" : LANE_GLOW_COLORS[f.lane];
+    const strength = f.rating === "perfect" ? 1 : f.rating === "great" ? 0.8 : 0.6;
+
+    if (isMiss) {
+      // A small, sad downward puff.
+      for (let i = 0; i < 5; i += 1) {
+        particles.push({
+          x: cx + (Math.random() - 0.5) * laneW * 0.3,
+          y: hitLineY,
+          vx: (Math.random() - 0.5) * 0.06,
+          vy: 0.05 + Math.random() * 0.05,
+          createdAtMs: f.createdAtMs,
+          lifeMs: 360,
+          size: 2 + Math.random() * 2,
+          color,
+        });
+      }
+      continue;
+    }
+
+    // Celebratory upward/outward fan of sparks for a hit.
+    const count = Math.round(8 + strength * 8);
+    for (let i = 0; i < count; i += 1) {
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
+      const speed = (0.12 + Math.random() * 0.32) * (0.7 + strength);
+      particles.push({
+        x: cx,
+        y: hitLineY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        createdAtMs: f.createdAtMs,
+        lifeMs: 420 + Math.random() * 260,
+        size: 2 + Math.random() * 3 * (0.6 + strength),
+        color: Math.random() < 0.3 ? "#ffffff" : color,
+      });
+    }
+    rings.push({ cx, cy: hitLineY, createdAtMs: f.createdAtMs, color, strength });
+  }
+
+  // Keep the processed-id set from growing without bound.
+  if (sparked.size > 96) {
+    const live = new Set(feedback.map((f) => f.id));
+    for (const id of sparked) if (!live.has(id)) sparked.delete(id);
+  }
+}
+
+/** Integrate + render the spark particles, pruning dead ones in place. */
+function drawParticles(
+  ctx: CanvasRenderingContext2D,
+  particles: Particle[],
+  t: number,
+): void {
+  if (particles.length === 0) return;
+
+  let write = 0;
+  ctx.save();
+  for (let read = 0; read < particles.length; read += 1) {
+    const p = particles[read];
+    if (!p) continue;
+    const age = t - p.createdAtMs;
+    if (age < 0 || age > p.lifeMs) continue;
+    // Survives → keep it (compact the array as we go).
+    particles[write] = p;
+    write += 1;
+
+    const k = age / p.lifeMs;
+    const x = p.x + p.vx * age;
+    const y = p.y + p.vy * age + 0.5 * PARTICLE_GRAVITY * age * age;
+    const alpha = 1 - k;
+    const size = p.size * (1 - 0.5 * k);
+
+    ctx.fillStyle = rgba(p.color, alpha);
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8 * alpha;
+    ctx.beginPath();
+    ctx.arc(x, y, Math.max(0.5, size), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  particles.length = write;
+}
+
+/** Expanding rings that pop out of the pad on a successful hit. */
+function drawHitRings(ctx: CanvasRenderingContext2D, rings: HitRing[], t: number): void {
+  if (rings.length === 0) return;
+
+  let write = 0;
+  ctx.save();
+  for (let read = 0; read < rings.length; read += 1) {
+    const ring = rings[read];
+    if (!ring) continue;
+    const age = t - ring.createdAtMs;
+    if (age < 0 || age > HIT_RING_MS) continue;
+    rings[write] = ring;
+    write += 1;
+
+    const k = age / HIT_RING_MS;
+    const radius = 14 + k * (60 + ring.strength * 50);
+    const alpha = (1 - k) * (0.5 + 0.4 * ring.strength);
+    ctx.strokeStyle = rgba(ring.color, alpha);
+    ctx.lineWidth = 3 * (1 - k) + 1;
+    ctx.shadowColor = ring.color;
+    ctx.shadowBlur = 12 * (1 - k);
+    ctx.beginPath();
+    ctx.arc(ring.cx, ring.cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+  rings.length = write;
+}
+
+/**
+ * A warm vignette + "ON FIRE" banner that grows with the combo, so a long
+ * streak visibly heats up the whole highway.
+ */
+function drawComboGlow(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  heat: number,
+  combo: number,
+  t: number,
+): void {
+  if (heat <= 0) return;
+
+  const pulse = 0.85 + 0.15 * Math.sin(t / 180);
+  const edge = ctx.createLinearGradient(0, 0, 0, h);
+  edge.addColorStop(0, `rgba(255, 140, 40, ${0.16 * heat * pulse})`);
+  edge.addColorStop(0.22, "rgba(255, 140, 40, 0)");
+  edge.addColorStop(0.8, "rgba(255, 90, 30, 0)");
+  edge.addColorStop(1, `rgba(255, 90, 30, ${0.18 * heat * pulse})`);
+  ctx.save();
+  ctx.fillStyle = edge;
+  ctx.fillRect(0, 0, w, h);
+
+  // Side glows.
+  const sideW = w * 0.12;
+  const left = ctx.createLinearGradient(0, 0, sideW, 0);
+  left.addColorStop(0, `rgba(255, 120, 40, ${0.14 * heat * pulse})`);
+  left.addColorStop(1, "rgba(255, 120, 40, 0)");
+  ctx.fillStyle = left;
+  ctx.fillRect(0, 0, sideW, h);
+  const right = ctx.createLinearGradient(w, 0, w - sideW, 0);
+  right.addColorStop(0, `rgba(255, 120, 40, ${0.14 * heat * pulse})`);
+  right.addColorStop(1, "rgba(255, 120, 40, 0)");
+  ctx.fillStyle = right;
+  ctx.fillRect(w - sideW, 0, sideW, h);
+
+  // Streak banner once the player is genuinely on a roll.
+  if (combo >= 10) {
+    ctx.globalAlpha = clamp(heat + 0.3, 0, 1) * pulse;
+    ctx.fillStyle = "#ffd166";
+    ctx.shadowColor = "rgba(255, 150, 40, 0.9)";
+    ctx.shadowBlur = 18;
+    ctx.font = `800 ${Math.min(22, w * 0.03)}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(`${combo}x COMBO`, w / 2, 14);
+  }
+  ctx.restore();
 }
 
 function drawLanes(
@@ -393,14 +664,25 @@ function drawHitLine(
   w: number,
   laneW: number,
   hitLineY: number,
+  heat: number,
+  t: number,
 ): void {
-  // Horizontal hit line.
-  ctx.strokeStyle = "rgba(255,255,255,0.5)";
-  ctx.lineWidth = 2;
+  // Horizontal hit line — brightens with the combo "heat".
+  ctx.save();
+  ctx.strokeStyle = rgba("#ffffff", 0.5 + 0.4 * heat);
+  ctx.lineWidth = 2 + 2 * heat;
+  if (heat > 0) {
+    ctx.shadowColor = `rgba(255, 180, 60, ${0.6 * heat})`;
+    ctx.shadowBlur = 16 * heat;
+  }
   ctx.beginPath();
   ctx.moveTo(0, hitLineY);
   ctx.lineTo(w, hitLineY);
   ctx.stroke();
+  ctx.restore();
+
+  // A gentle breathing pulse so the pads feel alive even when idle.
+  const pulse = 0.5 + 0.5 * Math.sin(t / 420);
 
   // Per-lane fret-pad targets (sized to match the gems).
   for (const lane of LANES) {
@@ -411,18 +693,18 @@ function drawHitLine(
     ctx.save();
     // Recessed translucent pad the gem "lands" into.
     const pad = ctx.createRadialGradient(cx, hitLineY, r * 0.2, cx, hitLineY, r);
-    pad.addColorStop(0, rgba(color, 0.22));
+    pad.addColorStop(0, rgba(color, 0.22 + 0.18 * heat));
     pad.addColorStop(1, rgba(color, 0.04));
     ctx.fillStyle = pad;
     ctx.beginPath();
     ctx.arc(cx, hitLineY, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Glowing rim.
+    // Glowing rim — glow swells with heat and the idle pulse.
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 14 + 18 * heat + 4 * pulse;
     ctx.beginPath();
     ctx.arc(cx, hitLineY, r, 0, Math.PI * 2);
     ctx.stroke();

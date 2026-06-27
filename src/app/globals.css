@@ -17,13 +17,25 @@ html,
 body {
   margin: 0;
   padding: 0;
-  height: 100%;
 }
 
+/* Fallback fill so any area beyond the body box (e.g. overscroll, or content
+   shorter than the viewport) is still the dark base colour, never bare white. */
+html {
+  min-height: 100%;
+  background: var(--bg-0);
+}
+
+/* Use min-height (not a fixed height:100%) so the background gradient always
+   covers the FULL content height. With a fixed height the gradient stopped at
+   one viewport tall, leaving content below it (e.g. the footer on short/landscape
+   screens) stranded on a bare background. */
 body {
+  min-height: 100dvh;
   background:
     radial-gradient(1200px 800px at 50% -10%, #1a2036 0%, transparent 60%),
     linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  background-color: var(--bg-0);
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;

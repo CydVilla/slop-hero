@@ -59,7 +59,7 @@ export function CatalogClient(): React.JSX.Element {
           royalty-free music and charts matched to the audio. Want to add
           yours?{" "}
           <Link href="/upload" className={styles.inlineLink}>
-            Upload a song
+            Add a song
           </Link>{" "}
           or open a PR — see <span className={styles.code}>CONTRIBUTING.md</span>.
         </p>

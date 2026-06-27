@@ -4,6 +4,8 @@
   display: flex;
   flex-direction: column;
   padding: clamp(20px, 4vw, 48px);
+  /* Keep the footer clear of the home-indicator / browser chrome on every size. */
+  padding-bottom: calc(clamp(20px, 4vw, 48px) + env(safe-area-inset-bottom, 0px));
   gap: clamp(24px, 4vh, 48px);
   overflow: hidden;
 }
@@ -219,5 +221,25 @@
   .footer {
     margin-top: 4px;
     padding-top: 18px;
+  }
+}
+
+/* Short / landscape screens (landscape phones, the Tesla browser). The base
+   layout bottom-aligns the hero via `margin-top: auto`, which on a short
+   viewport strands the footer below the fold. Flow content from the top and
+   tighten the rhythm so the footer lands naturally at the end of the page. */
+@media (max-height: 600px) {
+  .main {
+    justify-content: flex-start;
+    gap: 20px;
+  }
+
+  .hero {
+    margin-top: 8px;
+  }
+
+  .footer {
+    margin-top: 4px;
+    padding-top: 16px;
   }
 }
