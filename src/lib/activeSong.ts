@@ -12,6 +12,16 @@
  */
 
 import type { Difficulty, RhythmChart } from "@/game/types";
+import type { SessionSource } from "@/lib/metrics/types";
+
+/** Identity carried into /play so finished sessions can be attributed. */
+export interface SessionMeta {
+  trackId: string;
+  source: SessionSource;
+  difficulty: Difficulty;
+  bpm?: number;
+  artist?: string;
+}
 
 export interface ActiveSong {
   chart: RhythmChart;
@@ -22,6 +32,8 @@ export interface ActiveSong {
   title: string;
   /** Optional secondary line shown in the play header (artist · contributor). */
   subtitle?: string;
+  /** Track identity used by the analytics pipeline (anonymous). */
+  meta?: SessionMeta;
   /**
    * When set, /play should (re)derive the chart from `audioUrl` via onset
    * analysis before starting — used for built-in audio tracks so their notes

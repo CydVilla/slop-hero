@@ -15,7 +15,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CalibrationPanel } from "./CalibrationPanel";
 import { GameCanvas } from "./GameCanvas";
@@ -24,11 +24,13 @@ import styles from "./GameScreen.module.css";
 
 import { KEYBOARD_LANE_MAP } from "@/game/constants";
 import { chartDurationMs } from "@/game/chartUtils";
-import { accuracyPercent } from "@/game/scoring";
+import { accuracyPercent, isComplete } from "@/game/scoring";
 import type { RhythmChart } from "@/game/types";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import { useRhythmGame } from "@/hooks/useRhythmGame";
 import { useYouTubeEngine } from "@/hooks/useYouTubeEngine";
+import { recordSession } from "@/lib/metrics/client";
+import type { SessionMeta } from "@/lib/activeSong";
 
 interface GameScreenProps {
   chart: RhythmChart;
@@ -39,6 +41,8 @@ interface GameScreenProps {
   title: string;
   /** Optional secondary line (artist · contributor). */
   subtitle?: string;
+  /** Track identity used to attribute the anonymous session metric. */
+  sessionMeta?: SessionMeta;
 }
 
 export function GameScreen({
@@ -47,6 +51,7 @@ export function GameScreen({
   youtubeId,
   title,
   subtitle,
+  sessionMeta,
 }: GameScreenProps): React.JSX.Element {
   // Both engines are instantiated (rules of hooks), but only the selected one is
   // ever driven. The Web Audio engine stays inert until loaded/played, and the
@@ -115,6 +120,39 @@ export function GameScreen({
     }, 100);
     return () => window.clearInterval(id);
   }, [game.phase, getTimeMs, calibrationOffsetMs, chart.offsetMs]);
+
+  // Record one anonymous metric per finished run. The flag resets when a new
+  // run starts (countdown/playing) so replays are counted, but a single finish
+  // — which two code paths in the engine can trigger — is recorded only once.
+  const recordedRef = useRef(false);
+  useEffect(() => {
+    if (game.phase === "finished") {
+      if (recordedRef.current) return;
+      recordedRef.current = true;
+      const score = game.score;
+      recordSession({
+        chartId: sessionMeta?.trackId ?? chart.id,
+        title,
+        artist: sessionMeta?.artist ?? chart.artist,
+        difficulty: sessionMeta?.difficulty ?? chart.difficulty,
+        source: sessionMeta?.source ?? "unknown",
+        bpm: sessionMeta?.bpm ?? chart.bpm,
+        totalNotes: score.totalNotes,
+        score: score.score,
+        maxCombo: score.maxCombo,
+        accuracy: accuracyPercent(score),
+        perfect: score.perfect,
+        great: score.great,
+        good: score.good,
+        miss: score.miss,
+        calibrationOffsetMs: game.calibrationOffsetMs,
+        completed: isComplete(score),
+        durationMs: chartDurationMs(chart),
+      });
+    } else if (game.phase === "countdown" || game.phase === "playing") {
+      recordedRef.current = false;
+    }
+  }, [game.phase, game.score, game.calibrationOffsetMs, chart, title, sessionMeta]);
 
   const showStart = game.phase === "idle";
   const showCountdown = game.phase === "countdown";
@@ -315,6 +353,9 @@ function Results({
           <button type="button" className={styles.primaryBtn} onClick={onReplay}>
             Play again
           </button>
+          <Link href="/dashboard" className={styles.secondaryBtn}>
+            Your stats
+          </Link>
           <Link href="/" className={styles.secondaryBtn}>
             Home
           </Link>

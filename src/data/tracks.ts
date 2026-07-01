@@ -147,6 +147,13 @@ export function trackToActiveSong(track: CatalogTrack): ActiveSong {
     youtubeId: track.youtubeId,
     title: track.title,
     subtitle: `${track.artist} · added by ${track.contributor}`,
+    meta: {
+      trackId: track.id,
+      source: track.youtubeId ? "youtube" : track.source,
+      difficulty: track.difficulty,
+      bpm: track.bpm,
+      artist: track.artist,
+    },
     analyze,
   };
 }

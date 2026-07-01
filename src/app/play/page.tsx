@@ -90,6 +90,7 @@ export default function PlayPage(): React.JSX.Element {
       youtubeId={session.youtubeId}
       title={session.title}
       subtitle={session.subtitle}
+      sessionMeta={session.meta}
     />
   );
 }
