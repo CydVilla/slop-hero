@@ -106,6 +106,15 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
   // at performance.now()===anchorPerf. While playing, getTimeMs extrapolates.
   const anchor = useRef({ anchorMs: 0, anchorPerf: 0, playing: false });
 
+  // Whether WE intend the video to be playing. The YouTube IFrame API will start
+  // playback on its own in cases we don't want — most notably seekTo() resumes a
+  // non-paused player, and some embeds attempt autoplay. We only ever want the
+  // video running once play() is called (i.e. after the 3-2-1 countdown), so any
+  // PLAYING event fired while this is false is immediately paused. Without this
+  // the video ran during the countdown and then jumped back to 0 when play(0)
+  // finally fired.
+  const wantPlayingRef = useRef(false);
+
   // Create the player when we have a video id, the API, and a mount node.
   useEffect(() => {
     if (!videoId) return;
@@ -139,6 +148,17 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
             const states = window.YT?.PlayerState;
             if (!states) return;
             if (e.data === states.PLAYING) {
+              // Reject playback we didn't ask for (autoplay, or seekTo()
+              // auto-resuming) so the video can't run before/through the
+              // countdown. Pause it back down and stay "not playing".
+              if (!wantPlayingRef.current) {
+                try {
+                  e.target.pauseVideo();
+                } catch {
+                  /* player already gone */
+                }
+                return;
+              }
               anchor.current = {
                 anchorMs: e.target.getCurrentTime() * 1000,
                 anchorPerf: performance.now(),
@@ -163,6 +183,7 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
 
     return () => {
       cancelled = true;
+      wantPlayingRef.current = false;
       try {
         playerRef.current?.destroy();
       } catch {
@@ -203,6 +224,8 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
   const play = useCallback(async (fromMs?: number): Promise<void> => {
     const p = playerRef.current;
     if (!p) return;
+    // Declare intent BEFORE seeking/playing so the PLAYING event is accepted.
+    wantPlayingRef.current = true;
     if (fromMs !== undefined) {
       p.seekTo(fromMs / 1000, true);
       anchor.current = { anchorMs: fromMs, anchorPerf: performance.now(), playing: true };
@@ -211,10 +234,14 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
   }, []);
 
   const pause = useCallback((): void => {
+    wantPlayingRef.current = false;
     playerRef.current?.pauseVideo();
   }, []);
 
   const stop = useCallback((): void => {
+    // Clear intent first so the seekTo() below can't resume playback: any
+    // resulting PLAYING event is rejected by the guard in onStateChange.
+    wantPlayingRef.current = false;
     const p = playerRef.current;
     if (p) {
       try {

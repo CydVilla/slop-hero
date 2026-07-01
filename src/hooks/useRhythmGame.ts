@@ -389,12 +389,19 @@ export function useRhythmGame(
     [audio, chart.notes, chart.offsetMs, pushFeedback],
   );
 
-  // Finish as soon as every note has been judged.
+  // Finish as soon as every note has been judged — but not while a hold's tail
+  // is still being held. A sustain's head counts as the note's single judgement,
+  // so isComplete() can flip true the instant the last head is hit; ending then
+  // would cut off the sustain (and its bonus) mid-hold. When the hold resolves,
+  // the score changes and re-runs this effect (and update() auto-completes the
+  // tail), so the finish just waits one beat for the last sustain to land.
   useEffect(() => {
-    if (phase === "playing" && isComplete(score)) {
-      setPhase("finished");
-      audio.stop();
+    if (phase !== "playing" || !isComplete(score)) return;
+    for (const state of runtimeRef.current.values()) {
+      if (state.hold === "holding") return;
     }
+    setPhase("finished");
+    audio.stop();
   }, [phase, score, audio]);
 
   const adjustCalibration = useCallback((deltaMs: number) => {
