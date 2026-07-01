@@ -137,8 +137,12 @@ The game keeps a data-driven feedback loop that improves itself over time:
    `src/game/tuning.json` (+ a report). The existing **CI** gate must pass before
    it can merge, so a bad tune can't land unreviewed.
 
-Full write-up (privacy, storage, how to enable the loop, how to extend it):
-[`docs/metricsAndSelfImprovement.md`](./docs/metricsAndSelfImprovement.md).
+Full write-up (privacy, storage, Heroku deploy, how to enable the loop, how to
+extend it): [`docs/metricsAndSelfImprovement.md`](./docs/metricsAndSelfImprovement.md).
+
+**Deploying:** Heroku Postgres is supported out of the box — attach the add-on,
+push, and `DATABASE_URL` switches the metrics store from the local JSONL file to
+Postgres. See the doc for exact CLI steps and GitHub secrets.
 
 ## How to play
 
@@ -245,7 +249,7 @@ src/
     activeSong.ts      # in-memory hand-off between routes → /play
     analyzeClient.ts   # decode + drive the analysis worker (main thread)
     cloneHeroClient.ts # unzip + inspect/import Clone Hero songs in-browser
-    metrics/           # analytics: types, aggregate, insights, store, client
+    metrics/           # analytics: types, aggregate, insights, store (Postgres/JSONL), client
   workers/
     analyzeWorker.ts   # runs audioAnalysis off the main thread
 scripts/
@@ -310,4 +314,4 @@ the plans:
 ## Tech stack
 
 Next.js (App Router) · React · TypeScript (strict) · Canvas 2D · Web Audio API ·
-CSS Modules. Local-first; no database.
+CSS Modules. Local-first dev; Heroku Postgres for durable server metrics in production.

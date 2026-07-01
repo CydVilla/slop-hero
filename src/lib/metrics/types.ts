@@ -19,6 +19,9 @@ export type SessionSource = "built-in" | "session" | "youtube" | "unknown";
 /** Current schema version for stored events, so we can migrate later. */
 export const METRICS_SCHEMA_VERSION = 1 as const;
 
+/** Max play-session events kept when reading the server store. */
+export const METRICS_MAX_EVENTS = 50_000 as const;
+
 /**
  * One completed (or abandoned-at-the-end) play-through. Emitted by the client
  * when a song finishes and appended to the server store.

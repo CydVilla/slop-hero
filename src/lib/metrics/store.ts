@@ -1,14 +1,11 @@
 /**
  * Server-side metrics store.
  *
- * Deliberately dependency-free: play events are appended to a JSON Lines file
- * (one event per line) under a data directory. This keeps the project's
- * "local-first, no database" ethos — it works with zero setup in dev and on any
- * host with a writable disk. For a serverless / read-only filesystem, writes
- * fail softly and the dashboard simply falls back to per-device local data.
+ * Automatically selects a backend:
+ * - `DATABASE_URL` set → Heroku Postgres (durable, shared across dynos)
+ * - otherwise → JSON Lines file under `.data/metrics.jsonl` (local dev)
  *
- * Swappable later: point `METRICS_FILE` at a volume, or replace the two IO
- * functions with a KV/DB client without touching the aggregation or API layers.
+ * Writes fail softly everywhere: telemetry must never crash the app.
  *
  * Node runtime only — imported exclusively by API route handlers.
  */
@@ -16,7 +13,13 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { METRICS_SCHEMA_VERSION, type PlaySessionEvent } from "./types";
+import { isPostgresConfigured } from "./db";
+import {
+  appendEventPostgres,
+  isPostgresPersistenceHealthy,
+  readEventsPostgres,
+} from "./postgresStore";
+import { METRICS_SCHEMA_VERSION, METRICS_MAX_EVENTS, type PlaySessionEvent } from "./types";
 
 /** Absolute path to the JSONL store. Override with the METRICS_FILE env var. */
 function storePath(): string {
@@ -26,11 +29,33 @@ function storePath(): string {
 }
 
 /** Cap how many events we keep in memory when reading, newest kept. */
-const MAX_EVENTS = 50_000;
+const MAX_EVENTS = METRICS_MAX_EVENTS;
 
 let warnedWriteFailure = false;
 
 export async function appendEvent(event: PlaySessionEvent): Promise<boolean> {
+  if (isPostgresConfigured()) {
+    return appendEventPostgres(event);
+  }
+  return appendEventFile(event);
+}
+
+export async function readEvents(): Promise<PlaySessionEvent[]> {
+  if (isPostgresConfigured()) {
+    return readEventsPostgres();
+  }
+  return readEventsFile();
+}
+
+/** Whether server persistence appears to be available (best-effort). */
+export function isPersistenceConfigured(): boolean {
+  if (isPostgresConfigured()) {
+    return isPostgresPersistenceHealthy();
+  }
+  return !warnedWriteFailure;
+}
+
+async function appendEventFile(event: PlaySessionEvent): Promise<boolean> {
   const file = storePath();
   try {
     await mkdir(path.dirname(file), { recursive: true });
@@ -49,7 +74,7 @@ export async function appendEvent(event: PlaySessionEvent): Promise<boolean> {
   }
 }
 
-export async function readEvents(): Promise<PlaySessionEvent[]> {
+async function readEventsFile(): Promise<PlaySessionEvent[]> {
   const file = storePath();
   let raw: string;
   try {
@@ -65,18 +90,16 @@ export async function readEvents(): Promise<PlaySessionEvent[]> {
     if (!trimmed) continue;
     try {
       const parsed = JSON.parse(trimmed) as PlaySessionEvent;
-      if (isValidEvent(parsed)) events.push(parsed);
+      if (isValidEvent(parsed)) {
+        events.push(parsed);
+        if (events.length > MAX_EVENTS) events.shift();
+      }
     } catch {
       // Skip malformed lines rather than failing the whole read.
     }
   }
 
-  return events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
-}
-
-/** Whether server persistence appears to be available (best-effort). */
-export function isPersistenceConfigured(): boolean {
-  return !warnedWriteFailure;
+  return events;
 }
 
 const DIFFICULTIES = new Set(["easy", "medium", "hard", "expert"]);

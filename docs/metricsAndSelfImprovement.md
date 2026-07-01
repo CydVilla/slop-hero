@@ -6,7 +6,7 @@ players do. This document explains the whole pipeline: what's collected, where i
 goes, how it's turned into decisions, and how those decisions ship safely.
 
 ```
- play a song ──▶ record session ──▶ /api/metrics/session ──▶ JSONL store
+ play a song ──▶ record session ──▶ /api/metrics/session ──▶ Postgres (prod) / JSONL (dev)
       ▲                │ (localStorage too)                        │
       │                ▼                                           ▼
       │          /dashboard  ◀──── aggregate() ◀──── /api/metrics/summary
@@ -41,12 +41,18 @@ One event per finished play-through (`PlaySessionEvent` in
 
 ## 2. Where it goes
 
-`src/lib/metrics/store.ts` appends events to a JSON Lines file (default
-`.data/metrics.jsonl`, override with `METRICS_FILE`). This keeps the project's
-"local-first, no database" ethos and works with zero setup. On a read-only/
-serverless filesystem, writes fail softly and the dashboard falls back to
-per-device data. Swap the two IO functions for a KV/DB later without touching the
-aggregation or API layers.
+`src/lib/metrics/store.ts` picks a backend automatically:
+
+| Environment | Backend | How |
+|-------------|---------|-----|
+| **Production (Heroku)** | Heroku Postgres | `DATABASE_URL` is set by the add-on |
+| **Local dev** | JSON Lines file | default `.data/metrics.jsonl` (override with `METRICS_FILE`) |
+
+When `DATABASE_URL` is present, events are inserted into a `play_sessions`
+table via a shared `pg` pool (`src/lib/metrics/db.ts`). Without it, the original
+file store is used — zero setup for local work. In both cases writes fail softly
+(read-only disk, unreachable DB) and the dashboard falls back to per-device
+localStorage data.
 
 API routes (all Node runtime, `force-dynamic`):
 
@@ -99,11 +105,15 @@ a bad tune can't land unreviewed.
 
 ### Enabling it
 
-1. Deploy the app somewhere `/api/metrics/insights` is reachable.
-2. Add a repo variable/secret `METRICS_ENDPOINT` = that base URL. (Or set
-   `METRICS_FILE` to a committed fixtures path for a dry run.)
-3. Optional: add a `SELF_IMPROVE_TOKEN` PAT secret so the opened PR triggers CI
-   (PRs opened with the default `GITHUB_TOKEN` don't trigger other workflows).
+1. Deploy the app somewhere `/api/metrics/insights` is reachable (see
+   [Deploying to Heroku](#deploying-to-heroku) below).
+2. In the GitHub repo, set a **variable or secret** `METRICS_ENDPOINT` to the
+   deployed base URL (e.g. `https://your-app.herokuapp.com`). The workflow
+   fetches `${METRICS_ENDPOINT}/api/metrics/insights`. For a dry run without a
+   deployment, set `METRICS_FILE` to a committed fixtures path instead.
+3. Optional: add a `SELF_IMPROVE_TOKEN` **secret** — a PAT with `repo` scope — so
+   the opened PR triggers CI (PRs opened with the default `GITHUB_TOKEN` don't
+   trigger other workflows).
 
 Run it locally against fixtures:
 
@@ -111,7 +121,54 @@ Run it locally against fixtures:
 METRICS_FILE=docs/metrics/sample-insights.json npm run analyze:metrics
 ```
 
-## 6. Extending it
+## 7. Deploying to Heroku
+
+Slop Hero ships with a `Procfile` (`web: npm start`) and `"engines": { "node":
+"22.x" }` in `package.json`. `next start` honors Heroku's `$PORT` automatically.
+
+### One-time provisioning
+
+```bash
+# Create the app (pick your own name)
+heroku create slop-hero
+
+# Attach a small Postgres plan (sets DATABASE_URL automatically)
+heroku addons:create heroku-postgresql:essential-0
+
+# Deploy (use your branch name if not on main)
+git push heroku main:main
+
+# Confirm DATABASE_URL and other config
+heroku config
+```
+
+After deploy, open `/dashboard` and play a song — the **All players** tab should
+reflect server-wide aggregates once events land in Postgres.
+
+### Config vars (Heroku)
+
+| Var | Required | Purpose |
+|-----|----------|---------|
+| `DATABASE_URL` | auto (Postgres add-on) | Durable metrics store |
+| `YOUTUBE_API_KEY` | optional | In-app YouTube search on `/upload` |
+
+No secrets need to be committed to the repo.
+
+### GitHub repo secrets / variables (self-improve loop)
+
+| Name | Where | Purpose |
+|------|-------|---------|
+| `METRICS_ENDPOINT` | variable or secret | Base URL of the deployed app |
+| `SELF_IMPROVE_TOKEN` | secret (optional) | PAT so auto-tune PRs trigger CI |
+| `METRICS_FILE` | variable (optional) | Fixtures path for dry runs |
+
+### Local vs production storage
+
+- **No `DATABASE_URL`** → events append to `.data/metrics.jsonl` (gitignored).
+  Same behavior as before; ideal for dev.
+- **`DATABASE_URL` set** → Postgres is used; the JSONL file is ignored.
+
+## 8. Extending it
 
 - Add metrics: extend `PlaySessionEvent`, bump `METRICS_SCHEMA_VERSION`, and
   emit from `recordSession` where the game finishes (`GameScreen`).
