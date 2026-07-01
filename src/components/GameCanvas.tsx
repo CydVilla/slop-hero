@@ -42,8 +42,16 @@ interface GameCanvasProps {
   feedbackRef: React.RefObject<HitFeedback[]>;
   laneFlashRef: React.RefObject<Record<Lane, number>>;
   onFrame: (songTimeMs: number) => void;
-  /** Player tapped a lane column on the highway (the primary touch input). */
-  onLaneTap?: (lane: Lane) => void;
+  /**
+   * Player pressed a lane column on the highway (finger/pointer down). This is
+   * the primary touch input: it judges the note and begins any sustain.
+   */
+  onLanePress?: (lane: Lane) => void;
+  /**
+   * Player released a lane column (finger/pointer up). Resolves a sustain being
+   * held in that lane. Optional — taps work without it.
+   */
+  onLaneRelease?: (lane: Lane) => void;
   /** Current combo, used to drive escalating "on fire" visuals. */
   combo?: number;
 }
@@ -106,13 +114,17 @@ export function GameCanvas({
   feedbackRef,
   laneFlashRef,
   onFrame,
-  onLaneTap,
+  onLanePress,
+  onLaneRelease,
   combo = 0,
 }: GameCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ripplesRef = useRef<TapRipple[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const ringsRef = useRef<HitRing[]>([]);
+  // Which lane each active pointer is holding, so multi-touch chords/holds each
+  // release the correct lane on pointer-up regardless of finger order.
+  const pointerLanesRef = useRef<Map<number, Lane>>(new Map());
   // Feedback ids already turned into bursts, so each hit only sparks once even
   // though the feedback entry lingers for a few frames.
   const sparkedRef = useRef<Set<string>>(new Set());
@@ -124,7 +136,8 @@ export function GameCanvas({
     getTimeMs,
     getCalibrationOffsetMs,
     onFrame,
-    onLaneTap,
+    onLanePress,
+    onLaneRelease,
     combo,
   });
   propsRef.current = {
@@ -133,18 +146,20 @@ export function GameCanvas({
     getTimeMs,
     getCalibrationOffsetMs,
     onFrame,
-    onLaneTap,
+    onLanePress,
+    onLaneRelease,
     combo,
   };
 
   // Pointer-down anywhere on the highway: figure out the lane column under the
-  // finger, fire the tap, and spawn a ripple at the touch point. Using
+  // finger, fire the press, and spawn a ripple at the touch point. Using
   // pointerdown (not click) keeps latency low, and each simultaneous finger
-  // gets its own event so chords register.
+  // gets its own event so chords register. We capture the pointer so the
+  // matching pointer-up still fires even if the finger slides off the canvas.
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      const { onLaneTap: tap, getTimeMs: getT } = propsRef.current;
-      if (!tap) return;
+      const { onLanePress: press, getTimeMs: getT } = propsRef.current;
+      if (!press) return;
       e.preventDefault();
       const rect = e.currentTarget.getBoundingClientRect();
       if (rect.width <= 0) return;
@@ -152,7 +167,13 @@ export function GameCanvas({
       const y = e.clientY - rect.top;
       const laneW = rect.width / LANE_COUNT;
       const lane = Math.max(0, Math.min(LANE_COUNT - 1, Math.floor(x / laneW))) as Lane;
-      tap(lane);
+      pointerLanesRef.current.set(e.pointerId, lane);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Capture is best-effort; releases still work via the map fallback.
+      }
+      press(lane);
       ripplesRef.current.push({
         x,
         y,
@@ -162,6 +183,19 @@ export function GameCanvas({
       if (ripplesRef.current.length > 24) {
         ripplesRef.current = ripplesRef.current.slice(-24);
       }
+    },
+    [],
+  );
+
+  // Pointer-up / cancel: release the lane this pointer was holding so any
+  // in-progress sustain resolves. Looked up by pointerId so the right lane is
+  // released even with several fingers down at once.
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const lane = pointerLanesRef.current.get(e.pointerId);
+      if (lane === undefined) return;
+      pointerLanesRef.current.delete(e.pointerId);
+      propsRef.current.onLaneRelease?.(lane);
     },
     [],
   );
@@ -246,8 +280,11 @@ export function GameCanvas({
     <canvas
       ref={canvasRef}
       onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onLostPointerCapture={handlePointerUp}
       style={{ width: "100%", height: "100%", display: "block", touchAction: "none" }}
-      aria-label="Note highway — tap the lane under each note as it reaches the line"
+      aria-label="Note highway — tap the lane under each note as it reaches the line; hold long notes until their tail clears"
     />
   );
 }
@@ -557,15 +594,29 @@ function drawNotes(
   const pxPerMs = hitLineY / NOTE_TRAVEL_MS;
 
   for (const note of chart.notes) {
-    if (runtime?.get(note.id)?.judged) continue;
+    const state = runtime?.get(note.id);
+    const cx = note.lane * laneW + laneW / 2;
+    const color = LANE_COLORS[note.lane];
+
+    // A sustain being held: pin the head at the hit line and shrink the tail to
+    // show how much longer the player must keep pressing.
+    if (state?.hold === "holding") {
+      const endMs = note.timeMs + chart.offsetMs - cal + (note.durationMs ?? 0);
+      const remainingMs = Math.max(0, endMs - t);
+      const tail = Math.min(remainingMs * pxPerMs, hitLineY);
+      drawActiveHold(ctx, cx, hitLineY, tail, radius, color, t);
+      continue;
+    }
+
+    // Everything else that has been judged (tap, missed, completed/dropped
+    // sustain) is done — stop drawing it.
+    if (state?.judged) continue;
 
     const progress = noteTravelProgress(note, t, chart.offsetMs, cal);
     // Only draw notes that are on-screen (above the top a touch, below hit line).
     if (progress < -0.08 || progress > 1.12) continue;
 
     const y = progress * hitLineY;
-    const cx = note.lane * laneW + laneW / 2;
-    const color = LANE_COLORS[note.lane];
 
     // Approaching notes brighten as they near the hit line.
     const nearness = clamp(progress, 0, 1);
@@ -581,6 +632,38 @@ function drawNotes(
 
     drawGem(ctx, cx, y, radius, color, alpha);
   }
+}
+
+/**
+ * A sustain currently being held: a bright, pulsing tail draining down into the
+ * hit line with a glowing head locked at the pad, so it reads as "keep holding".
+ */
+function drawActiveHold(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  hitLineY: number,
+  tail: number,
+  radius: number,
+  color: string,
+  t: number,
+): void {
+  const pulse = 0.7 + 0.3 * Math.sin(t / 90);
+  if (tail > 1) {
+    ctx.save();
+    const top = hitLineY - tail;
+    const grad = ctx.createLinearGradient(0, top, 0, hitLineY);
+    grad.addColorStop(0, rgba(color, 0.15 * pulse));
+    grad.addColorStop(1, rgba(color, 0.85 * pulse, 0.25));
+    ctx.fillStyle = grad;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16 * pulse;
+    const width = radius * 0.72;
+    roundRect(ctx, cx - width / 2, top, width, tail, width / 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  // Glowing head anchored at the pad.
+  drawGem(ctx, cx, hitLineY, radius * (0.92 + 0.08 * pulse), color, 1);
 }
 
 /** A vertical rounded sustain bar trailing above the gem. */
@@ -737,13 +820,24 @@ function drawFeedback(
     const cx = f.lane * laneW + laneW / 2;
     const cy = hitLineY - 40 - rise;
 
+    const label = f.hold
+      ? f.hold === "completed"
+        ? "HOLD"
+        : "DROP"
+      : RATING_LABEL[f.rating];
+    const fill = f.hold
+      ? f.hold === "completed"
+        ? "#4ade80"
+        : "#f87171"
+      : RATING_COLOR[f.rating];
+
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = RATING_COLOR[f.rating];
+    ctx.fillStyle = fill;
     ctx.font = `700 ${Math.min(20, laneW * 0.18)}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(RATING_LABEL[f.rating], cx, cy);
+    ctx.fillText(label, cx, cy);
     ctx.restore();
   }
 }

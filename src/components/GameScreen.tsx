@@ -61,7 +61,7 @@ export function GameScreen({
   const audio = youtubeId ? youtube.engine : webAudio;
 
   const game = useRhythmGame(chart, audio);
-  const { tapLane, togglePause, start, restart } = game;
+  const { pressLane, releaseLane, togglePause, start, restart } = game;
 
   const [debug, setDebug] = useState({ song: 0, chart: 0 });
 
@@ -88,7 +88,8 @@ export function GameScreen({
   }, [youtubeId, audioUrl, durationMs, loadFromUrl, loadSilent]);
 
   // Keyboard input (desktop testing only): A/S/D/F/G lanes, Space play/pause.
-  // The primary input is tapping the notes directly on the highway.
+  // The primary input is tapping the notes directly on the highway. Key-down
+  // presses (and begins a sustain); key-up releases it, mirroring touch.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
@@ -99,14 +100,22 @@ export function GameScreen({
       }
       const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
       if (lane !== undefined) {
-        tapLane(lane);
+        pressLane(lane);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
+      if (lane !== undefined) {
+        releaseLane(lane);
       }
     };
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
     };
-  }, [tapLane, togglePause]);
+  }, [pressLane, releaseLane, togglePause]);
 
   // Low-frequency debug clock (10 fps) so the calibration readout updates
   // without coupling to the animation loop.
@@ -199,7 +208,8 @@ export function GameScreen({
             feedbackRef={game.feedbackRef}
             laneFlashRef={game.laneFlashRef}
             onFrame={game.update}
-            onLaneTap={tapLane}
+            onLanePress={pressLane}
+            onLaneRelease={releaseLane}
             combo={game.score.combo}
           />
         </div>
