@@ -2,6 +2,9 @@
   "name": "slop-hero",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "license": "MIT",
   "description": "A Tesla-browser-friendly, touchscreen rhythm game (Clone Hero / Rock Band style) built with Next.js.",
   "scripts": {
@@ -17,11 +20,13 @@
   "dependencies": {
     "fflate": "^0.8.3",
     "next": "^16.2.9",
+    "pg": "^8.22.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
     "@types/node": "26.0.1",
+    "@types/pg": "^8.20.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "typescript": "6.0.3",

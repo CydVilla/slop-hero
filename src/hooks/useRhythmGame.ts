@@ -34,6 +34,7 @@ import {
   resolveTap,
 } from "@/game/scoring";
 import type {
+  ChartNote,
   GamePhase,
   HitFeedback,
   Lane,
@@ -98,6 +99,12 @@ function emptyLaneFlash(): Record<Lane, number> {
   return { 0: -Infinity, 1: -Infinity, 2: -Infinity, 3: -Infinity, 4: -Infinity };
 }
 
+function notesById(chart: RhythmChart): Map<string, ChartNote> {
+  const map = new Map<string, ChartNote>();
+  for (const note of chart.notes) map.set(note.id, note);
+  return map;
+}
+
 export function useRhythmGame(
   chart: RhythmChart,
   audio: GameAudioControls,
@@ -120,6 +127,7 @@ export function useRhythmGame(
   const runtimeRef = useRef<Map<string, NoteRuntimeState>>(
     createRuntimeState(chart),
   );
+  const notesByIdRef = useRef<Map<string, ChartNote>>(notesById(chart));
   const feedbackRef = useRef<HitFeedback[]>([]);
   const laneFlashRef = useRef<Record<Lane, number>>(emptyLaneFlash());
 
@@ -147,6 +155,7 @@ export function useRhythmGame(
   useEffect(() => {
     clearCountdownTimer();
     runtimeRef.current = createRuntimeState(chart);
+    notesByIdRef.current = notesById(chart);
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
     durationRef.current = chartDurationMs(chart);
@@ -188,6 +197,7 @@ export function useRhythmGame(
 
   const resetGameState = useCallback(() => {
     runtimeRef.current = createRuntimeState(chart);
+    notesByIdRef.current = notesById(chart);
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
     setScore(createInitialScore(chart.notes.length));
@@ -337,7 +347,7 @@ export function useRhythmGame(
 
       if (missedIds.length > 0) {
         for (const id of missedIds) {
-          const note = chart.notes.find((n) => n.id === id);
+          const note = notesByIdRef.current.get(id);
           runtimeRef.current.set(id, {
             judged: true,
             rating: "miss",
@@ -365,7 +375,7 @@ export function useRhythmGame(
       if (completedHoldIds.length > 0) {
         let bonusDurations = 0;
         for (const id of completedHoldIds) {
-          const note = chart.notes.find((n) => n.id === id);
+          const note = notesByIdRef.current.get(id);
           const prev = runtimeRef.current.get(id);
           runtimeRef.current.set(id, {
             ...(prev ?? { judged: true }),
