@@ -31,8 +31,10 @@ Clone Hero import is **implemented** for `.sng`, `.zip`, and bare `.chart` /
 
 - Multi-stem audio is not mixed; we pick `song.*` (else `guitar.*`, else the
   first audio file).
-- Sustains import as taps (length kept on `durationMs` but ignored by scoring);
-  HOPO/forced/tap/star-power flags are dropped; chords are capped at 2 notes.
+- Sustains import as **playable holds**: their `durationMs` is preserved and
+  sustains at/over `MIN_HOLD_MS` are tagged `type: "hold"`, so the player taps
+  the head and holds the tail. HOPO/forced/tap/star-power flags are dropped;
+  chords are capped at 2 notes.
 - No automatic onset-latency/offset reconciliation beyond `song.ini`/`.chart`
   offset — use the in-game calibration if timing feels off.
 

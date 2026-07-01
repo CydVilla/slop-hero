@@ -23,6 +23,10 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
   `.mid` and play it on the touchscreen.
 - ⏱️ Web Audio API as the timing source (precise, monotonic clock).
 - 🎯 Five lanes (green/red/yellow/blue/orange), large touch targets.
+- 🎸 **Hold notes (sustains)** — Guitar Hero / Rock Band style: tap the head, then
+  keep the lane pressed through the tail for a length-scaled bonus. Releasing
+  early drops the sustain and breaks your combo. Works with multi-touch, so you
+  can hold one lane while tapping others.
 - 🟢 Hit windows: Perfect ±35ms, Great ±70ms, Good ±110ms.
 - 🔢 Score, combo, max combo, accuracy, and per-rating counts with combo
   multipliers (×1 / ×2 / ×3 / ×4).
@@ -78,6 +82,8 @@ npm run build           # production build
 npm run start           # serve production build
 npm run typecheck       # tsc --noEmit
 npm run lint            # next lint
+npm test                # run the pure-logic unit tests (Vitest, one-shot)
+npm run test:watch      # run Vitest in watch mode
 npm run analyze:metrics # run the self-improvement analyzer (see below)
 ```
 
@@ -88,9 +94,9 @@ Dependencies are kept current automatically:
 - **[Dependabot](.github/dependabot.yml)** opens PRs weekly for npm packages and
   GitHub Actions. Minor/patch bumps are grouped into a single "non-major" PR;
   majors get their own PR.
-- **[CI](.github/workflows/ci.yml)** runs `npm ci`, `npm run typecheck`, and
-  `npm run build` on every PR. This is the gate that decides whether an update
-  "breaks something".
+- **[CI](.github/workflows/ci.yml)** runs `npm ci`, `npm run typecheck`,
+  `npm test`, and `npm run build` on every PR. This is the gate that decides
+  whether an update "breaks something".
 - **[Auto-merge](.github/workflows/dependabot-auto-merge.yml)** approves and
   enables auto-merge for non-breaking (minor/patch) Dependabot PRs. GitHub then
   merges them **only after CI passes**. **Major** updates are left open with a
@@ -141,7 +147,11 @@ Full write-up (privacy, storage, how to enable the loop, how to extend it):
 3. **Tap the note itself** — touch its lane on the highway the moment the gem
    reaches the hit line. Each finger taps its own note, so chords work.
    - Desktop: keys **A S D F G** map to the five lanes.
-4. If notes feel early/late, nudge the **Calibration** offset.
+4. **Hold the long notes** — some gems have a glowing tail. Tap the head like a
+   normal note, then keep holding (finger down / key held) until the tail clears
+   the hit line. Hold all the way for a bonus; let go early and the sustain
+   drops (and your combo breaks).
+5. If notes feel early/late, nudge the **Calibration** offset.
 
 ## How upload & auto-charting works
 
@@ -187,8 +197,9 @@ audio), an **unzipped song folder** (drag the folder onto the dropzone, or use
    `RhythmChart`. If the song has audio (incl. `song.opus`) it plays with sound;
    otherwise it plays in silent mode.
 
-Adaptations for touch: sustains import as taps, chords are capped at 2 notes, and
-HOPO/forced/tap/star-power flags are dropped. Details and remaining work:
+Adaptations for touch: sustains import as **playable holds** (their length is
+preserved and long-enough sustains must be held), chords are capped at 2 notes,
+and HOPO/forced/tap/star-power flags are dropped. Details and remaining work:
 `docs/cloneHeroImportPlan.md`.
 
 ## Architecture
@@ -218,7 +229,7 @@ src/
     constants.ts       # hit windows, lane count, scroll speed, scoring values
     tuning.ts/.json    # auto-tunable params the self-improvement loop may rewrite
     timing.ts          # offset/calibration math, note travel progress
-    scoring.ts         # hit detection, rating, combo, miss marking, accuracy
+    scoring.ts         # hit detection, rating, combo, miss marking, accuracy, holds
     chartUtils.ts      # ids, sorting, validation, runtime-state construction
     demoChart.ts       # built-in demo chart
     autoMapper.ts      # deterministic BPM-grid automapper (+ fallback)
@@ -252,7 +263,8 @@ docs/                  # future-work plans + references
   low-frequency UI (score, phase, calibration).
 - **Pure rules.** `scoring.ts` and `timing.ts` are deterministic functions of
   their inputs — easy to unit test (find hittable note, rating for error, mark
-  missed notes, apply hit/miss, accuracy).
+  missed notes, apply hit/miss, accuracy, and the hold/sustain lifecycle). See
+  `src/game/*.test.ts` (run with `npm test`).
 - **Stable output contract.** The grid automapper, the audio analyzer, and the
   (future) Clone Hero importer all produce the same `RhythmChart` JSON the game
   consumes — so generators can be swapped without touching gameplay.
