@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { COUNTDOWN_MS, FEEDBACK_DURATION_MS } from "@/game/constants";
+import { defaultCalibrationOffsetMs } from "@/game/tuning";
 import { createRuntimeState, makeNoteId, chartDurationMs } from "@/game/chartUtils";
 import {
   applyHit,
@@ -91,7 +92,11 @@ export function useRhythmGame(
     createInitialScore(chart.notes.length),
   );
   const [countdown, setCountdown] = useState(0);
-  const [calibrationOffsetMs, setCalibrationOffsetMs] = useState(0);
+  // Seeded from the auto-tuned default so the loop can improve out-of-the-box
+  // sync over time; players can still adjust it live.
+  const [calibrationOffsetMs, setCalibrationOffsetMs] = useState(() =>
+    defaultCalibrationOffsetMs(),
+  );
 
   // Pending interval id for the pre-song countdown, so we can cancel it if the
   // player restarts/pauses mid-count or the component unmounts.
@@ -305,7 +310,10 @@ export function useRhythmGame(
     setCalibrationOffsetMs((prev) => prev + deltaMs);
   }, []);
 
-  const resetCalibration = useCallback(() => setCalibrationOffsetMs(0), []);
+  const resetCalibration = useCallback(
+    () => setCalibrationOffsetMs(defaultCalibrationOffsetMs()),
+    [],
+  );
 
   return useMemo<RhythmGame>(
     () => ({

@@ -16,6 +16,7 @@
 
 import { LANE_COUNT } from "./constants";
 import { beatsToMs, makeNoteId } from "./chartUtils";
+import { densityScaleFor } from "./tuning";
 import type { ChartNote, Difficulty, Lane, RhythmChart } from "./types";
 
 export interface AutoMapOptions {
@@ -108,6 +109,9 @@ export function generateAutoChart(opts: AutoMapOptions): RhythmChart {
   const bpm = opts.bpm && opts.bpm > 0 ? opts.bpm : 120;
   const offsetMs = opts.offsetMs ?? 0;
   const profile = PROFILES[opts.difficulty];
+  // The self-improvement loop nudges density per difficulty based on real miss
+  // rates; apply it here (clamped to a safe range in tuning.ts). 1 = baseline.
+  const fillChance = Math.min(1, Math.max(0, profile.fillChance * densityScaleFor(opts.difficulty)));
   const rng = makeRng(seedFrom(opts, bpm));
 
   const totalBeats = (opts.durationSeconds / 60) * bpm;
@@ -120,7 +124,7 @@ export function generateAutoChart(opts: AutoMapOptions): RhythmChart {
   const leadInBeats = 4;
 
   for (let beat = leadInBeats; beat < totalBeats; beat += profile.stepBeats) {
-    if (rng() > profile.fillChance) continue;
+    if (rng() > fillChance) continue;
 
     const timeMs = beatsToMs(beat, bpm);
     // Enforce the per-difficulty throughput floor so high-BPM songs stay

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-01",
+  "defaultCalibrationOffsetMs": 0,
+  "difficultyDensityScale": {
+    "easy": 1,
+    "medium": 1,
+    "hard": 1,
+    "expert": 1
+  },
+  "notes": "Baseline tuning. Values in this file are safe to auto-tune from aggregated play metrics (see scripts/apply-tuning.mjs and docs/metricsAndSelfImprovement.md)."
+}
