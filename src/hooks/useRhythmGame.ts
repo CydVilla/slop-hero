@@ -18,17 +18,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { COUNTDOWN_MS, FEEDBACK_DURATION_MS } from "@/game/constants";
+import { COUNTDOWN_MS, FEEDBACK_DURATION_MS, HIT_WINDOWS } from "@/game/constants";
 import { defaultCalibrationOffsetMs } from "@/game/tuning";
-import { createRuntimeState, makeNoteId, chartDurationMs } from "@/game/chartUtils";
+import {
+  createRuntimeState,
+  makeNoteId,
+  chartDurationMs,
+  noteIndexRange,
+  sortNotes,
+} from "@/game/chartUtils";
 import {
   applyHit,
   applyHoldComplete,
   applyHoldDrop,
   applyMiss,
+  collectMissedFrom,
   createInitialScore,
   findCompletedHoldIds,
-  findNewlyMissedNoteIds,
   isComplete,
   resolveRelease,
   resolveTap,
@@ -128,6 +134,17 @@ export function useRhythmGame(
     createRuntimeState(chart),
   );
   const notesByIdRef = useRef<Map<string, ChartNote>>(notesById(chart));
+  // Notes sorted ascending by time. Every chart source already emits them in
+  // order, but sorting here makes the binary-search windowing below correct by
+  // construction regardless of source, at a one-time O(n log n) on chart load.
+  const sortedNotesRef = useRef<ChartNote[]>(sortNotes(chart.notes));
+  // Monotonic cursor into sortedNotesRef: all notes before it are past their
+  // miss deadline (hence resolved). Advanced by collectMissedFrom each frame so
+  // miss detection never re-scans the whole chart. Reset on (re)start.
+  const missCursorRef = useRef(0);
+  // Ids of holds whose head was hit and whose tail is still being held. Lets the
+  // per-frame auto-complete check touch only live sustains instead of every note.
+  const activeHoldsRef = useRef<Set<string>>(new Set());
   const feedbackRef = useRef<HitFeedback[]>([]);
   const laneFlashRef = useRef<Record<Lane, number>>(emptyLaneFlash());
 
@@ -156,6 +173,9 @@ export function useRhythmGame(
     clearCountdownTimer();
     runtimeRef.current = createRuntimeState(chart);
     notesByIdRef.current = notesById(chart);
+    sortedNotesRef.current = sortNotes(chart.notes);
+    missCursorRef.current = 0;
+    activeHoldsRef.current.clear();
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
     durationRef.current = chartDurationMs(chart);
@@ -198,6 +218,9 @@ export function useRhythmGame(
   const resetGameState = useCallback(() => {
     runtimeRef.current = createRuntimeState(chart);
     notesByIdRef.current = notesById(chart);
+    sortedNotesRef.current = sortNotes(chart.notes);
+    missCursorRef.current = 0;
+    activeHoldsRef.current.clear();
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
     setScore(createInitialScore(chart.notes.length));
@@ -262,19 +285,44 @@ export function useRhythmGame(
     }
   }, [audio, beginCountdown, clearCountdownTimer]);
 
+  // Materialise the currently-held sustains as note objects. Small (usually 0–1
+  // entries) so the per-frame / per-release hold checks stay O(active holds).
+  const activeHoldNotes = useCallback((): ChartNote[] => {
+    const set = activeHoldsRef.current;
+    if (set.size === 0) return [];
+    const out: ChartNote[] = [];
+    for (const id of set) {
+      const note = notesByIdRef.current.get(id);
+      if (note) out.push(note);
+    }
+    return out;
+  }, []);
+
   const pressLane = useCallback(
     (lane: Lane) => {
       if (phaseRef.current !== "playing") return;
       const t = audio.getTimeMs();
       laneFlashRef.current[lane] = t;
 
+      // Only notes whose time sits within the good window of now can be hit, so
+      // binary-search that slice instead of scanning the whole chart per tap.
+      const notes = sortedNotesRef.current;
+      const chartTimeMs = t - chart.offsetMs + calibrationRef.current;
+      const [lo, hi] = noteIndexRange(
+        notes,
+        chartTimeMs - HIT_WINDOWS.good,
+        chartTimeMs + HIT_WINDOWS.good,
+      );
+
       const result = resolveTap(
-        chart.notes,
+        notes,
         runtimeRef.current,
         lane,
         t,
         chart.offsetMs,
         calibrationRef.current,
+        lo,
+        hi,
       );
 
       if (result.kind === "hit") {
@@ -286,13 +334,14 @@ export function useRhythmGame(
           hold: result.startsHold ? "holding" : undefined,
           holdStartMs: result.startsHold ? t : undefined,
         });
+        if (result.startsHold) activeHoldsRef.current.add(result.note.id);
         setScore((s) => applyHit(s, result.rating));
         pushFeedback(lane, result.rating, t, result.errorMs);
       }
       // Stray taps (no note in window) are intentionally forgiving on a
       // touchscreen: they flash the lane but do not break combo.
     },
-    [audio, chart.notes, chart.offsetMs, pushFeedback],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes],
   );
 
   const releaseLane = useCallback(
@@ -300,8 +349,10 @@ export function useRhythmGame(
       if (phaseRef.current !== "playing") return;
       const t = audio.getTimeMs();
 
+      // Only sustains currently being held can be resolved by a release, so scan
+      // just those instead of the whole chart.
       const result = resolveRelease(
-        chart.notes,
+        activeHoldNotes(),
         runtimeRef.current,
         lane,
         t,
@@ -316,6 +367,7 @@ export function useRhythmGame(
           hold: "completed",
           holdEndMs: t,
         });
+        activeHoldsRef.current.delete(result.note.id);
         setScore((s) => applyHoldComplete(s, result.note.durationMs ?? 0));
         pushFeedback(lane, "perfect", t, 0, "completed");
       } else if (result.kind === "dropped") {
@@ -325,25 +377,30 @@ export function useRhythmGame(
           hold: "dropped",
           holdEndMs: t,
         });
+        activeHoldsRef.current.delete(result.note.id);
         setScore((s) => applyHoldDrop(s));
         pushFeedback(lane, "miss", t, 0, "dropped");
       }
       // No sustain in this lane → releasing is a harmless no-op.
     },
-    [audio, chart.notes, chart.offsetMs, pushFeedback],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes],
   );
 
   const update = useCallback(
     (songTimeMs: number) => {
       if (phaseRef.current !== "playing") return;
 
-      const missedIds = findNewlyMissedNoteIds(
-        chart.notes,
+      // Miss detection walks a monotonic cursor from where it left off, so notes
+      // already resolved earlier in the song are never re-scanned.
+      const { missedIds, nextIndex } = collectMissedFrom(
+        sortedNotesRef.current,
         runtimeRef.current,
+        missCursorRef.current,
         songTimeMs,
         chart.offsetMs,
         calibrationRef.current,
       );
+      missCursorRef.current = nextIndex;
 
       if (missedIds.length > 0) {
         for (const id of missedIds) {
@@ -363,9 +420,10 @@ export function useRhythmGame(
       }
 
       // Auto-complete sustains the player kept pressed through the tail's end,
-      // so a held note resolves even without an explicit release event.
+      // so a held note resolves even without an explicit release event. Only the
+      // handful of live sustains are checked, not every note in the chart.
       const completedHoldIds = findCompletedHoldIds(
-        chart.notes,
+        activeHoldNotes(),
         runtimeRef.current,
         songTimeMs,
         chart.offsetMs,
@@ -382,6 +440,7 @@ export function useRhythmGame(
             hold: "completed",
             holdEndMs: songTimeMs,
           });
+          activeHoldsRef.current.delete(id);
           if (note) {
             bonusDurations += note.durationMs ?? 0;
             pushFeedback(note.lane, "perfect", songTimeMs, 0, "completed");
@@ -396,7 +455,7 @@ export function useRhythmGame(
         audio.stop();
       }
     },
-    [audio, chart.notes, chart.offsetMs, pushFeedback],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes],
   );
 
   // Finish as soon as every note has been judged — but not while a hold's tail

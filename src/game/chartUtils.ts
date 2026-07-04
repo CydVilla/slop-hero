@@ -46,6 +46,48 @@ export function createRuntimeState(
   return map;
 }
 
+/**
+ * Index of the first note whose `timeMs` is >= `timeMs`, found by binary search.
+ * If every note is earlier, returns `notes.length`.
+ *
+ * REQUIRES `notes` sorted ascending by `timeMs` (the invariant every chart
+ * source upholds — generators emit in order and importers run {@link sortNotes}).
+ * This is the primitive the gameplay hook uses to turn its per-frame / per-tap
+ * "which notes are near the hit line right now" scans from O(n) into
+ * O(log n) + O(window). O(log n).
+ */
+export function firstIndexAtOrAfter(
+  notes: readonly ChartNote[],
+  timeMs: number,
+): number {
+  let lo = 0;
+  let hi = notes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((notes[mid] as ChartNote).timeMs < timeMs) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Half-open index range `[lo, hi)` of the notes whose `timeMs` falls within the
+ * inclusive `[minTimeMs, maxTimeMs]` window. A tiny epsilon on the upper bound
+ * keeps notes sitting exactly on `maxTimeMs` inside the range despite floating
+ * point (note times come from `beatsToMs`, so they are rarely integers).
+ *
+ * REQUIRES `notes` sorted ascending by `timeMs`. O(log n).
+ */
+export function noteIndexRange(
+  notes: readonly ChartNote[],
+  minTimeMs: number,
+  maxTimeMs: number,
+): [number, number] {
+  const lo = firstIndexAtOrAfter(notes, minTimeMs);
+  const hi = firstIndexAtOrAfter(notes, maxTimeMs + 1e-6);
+  return [lo, Math.max(lo, hi)];
+}
+
 /** Total chart duration in ms (last note end), useful for progress bars. */
 export function chartDurationMs(chart: RhythmChart): number {
   let max = 0;
