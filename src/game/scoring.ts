@@ -74,9 +74,11 @@ export function comboMultiplier(combo: number): number {
  * Find the nearest unjudged note in `lane` whose effective time is within the
  * good window of `songTimeMs`. Returns undefined if none qualifies.
  *
- * The chart is assumed sorted by timeMs; we still scan linearly because the
- * candidate window is tiny. Callers that care about perf can pass a sliced
- * view, but correctness here does not depend on ordering.
+ * The optional `searchLo`/`searchHi` bound the slice of `notes` actually
+ * scanned. They default to the whole array (order-independent, always correct).
+ * A caller that keeps `notes` sorted by `timeMs` can pass a tiny window — e.g.
+ * from {@link noteIndexRange} — to make a tap O(window) instead of O(n) without
+ * changing the result: notes outside the good window can never be the nearest.
  */
 export function findHittableNote(
   notes: readonly ChartNote[],
@@ -85,11 +87,14 @@ export function findHittableNote(
   songTimeMs: number,
   chartOffsetMs: number,
   calibrationOffsetMs: number,
+  searchLo = 0,
+  searchHi = notes.length,
 ): ChartNote | undefined {
   let best: ChartNote | undefined;
   let bestAbsError = Number.POSITIVE_INFINITY;
 
-  for (const note of notes) {
+  for (let i = searchLo; i < searchHi; i += 1) {
+    const note = notes[i] as ChartNote;
     if (note.lane !== lane) continue;
     if (runtime.get(note.id)?.judged) continue;
 
@@ -117,6 +122,8 @@ export function resolveTap(
   songTimeMs: number,
   chartOffsetMs: number,
   calibrationOffsetMs: number,
+  searchLo = 0,
+  searchHi = notes.length,
 ): HitResult {
   const note = findHittableNote(
     notes,
@@ -125,6 +132,8 @@ export function resolveTap(
     songTimeMs,
     chartOffsetMs,
     calibrationOffsetMs,
+    searchLo,
+    searchHi,
   );
 
   if (!note) {
@@ -274,6 +283,39 @@ export function findNewlyMissedNoteIds(
     }
   }
   return missed;
+}
+
+/**
+ * Cursor-based counterpart to {@link findNewlyMissedNoteIds}, for the per-frame
+ * hot path. Scans notes in time order starting at `fromIndex` and collects every
+ * unjudged note whose late window has fully elapsed (`error > MISS_THRESHOLD_MS`).
+ *
+ * Because `notes` is sorted by `timeMs`, once a note is still within its window
+ * every later note is too, so the scan stops there. A note past its miss
+ * deadline can never be hit again, so all notes before the returned `nextIndex`
+ * are now resolved — the caller feeds it back as `fromIndex` next frame, turning
+ * an O(n) whole-chart sweep into O(notes crossing the line this frame).
+ *
+ * REQUIRES `notes` sorted ascending by `timeMs`.
+ */
+export function collectMissedFrom(
+  notes: readonly ChartNote[],
+  runtime: ReadonlyMap<string, NoteRuntimeState>,
+  fromIndex: number,
+  songTimeMs: number,
+  chartOffsetMs: number,
+  calibrationOffsetMs: number,
+): { missedIds: string[]; nextIndex: number } {
+  const missedIds: string[] = [];
+  let i = Math.max(0, fromIndex);
+  for (; i < notes.length; i += 1) {
+    const note = notes[i] as ChartNote;
+    const error = timingErrorMs(note, songTimeMs, chartOffsetMs, calibrationOffsetMs);
+    // Still inside its late window → so is every later note; stop scanning.
+    if (error <= MISS_THRESHOLD_MS) break;
+    if (!runtime.get(note.id)?.judged) missedIds.push(note.id);
+  }
+  return { missedIds, nextIndex: i };
 }
 
 /**
