@@ -12,6 +12,7 @@
  * `youtubeId` (embedded YouTube video).
  */
 
+import { filterAvailable } from "@/data/availability";
 import { generateAutoChart } from "@/game/autoMapper";
 import { chartDurationMs } from "@/game/chartUtils";
 import type { Difficulty, RhythmChart } from "@/game/types";
@@ -115,9 +116,22 @@ export function getSessionTracks(): readonly CatalogTrack[] {
   return sessionTracks;
 }
 
+/**
+ * Built-ins minus any the scheduled catalog audit has flagged as broken (dead
+ * YouTube video, missing audio file — see src/data/availability.ts). Computed
+ * once at module load; the underlying JSON only changes via audited PRs.
+ * If the audit somehow flagged everything, fall back to the unfiltered list —
+ * a possibly-broken track beats an empty catalog (pickRandomTrack assumes at
+ * least one entry exists).
+ */
+const availableBuiltInTracks: CatalogTrack[] = ((): CatalogTrack[] => {
+  const available = filterAvailable(builtInTracks);
+  return available.length > 0 ? available : builtInTracks;
+})();
+
 /** The full catalog: session uploads first, then the built-in library. */
 export function getCatalog(): CatalogTrack[] {
-  return [...sessionTracks, ...builtInTracks];
+  return [...sessionTracks, ...availableBuiltInTracks];
 }
 
 export function getTrackById(id: string): CatalogTrack | undefined {

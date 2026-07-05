@@ -77,6 +77,25 @@ small reusable phrases. Keep it playable on a touchscreen:
 - `trackToActiveSong(track)` — converts to the `/play` hand-off shape.
 - `trackNoteCount(track)` / `trackDurationSeconds(track)` — UI helpers.
 
+## Automated rot audit
+
+CI proves the code builds; it cannot prove the catalog is still **playable** — a
+track's YouTube video can be deleted/privated/blocked from embedding, and a
+bundled audio file can go missing, without any commit. A scheduled workflow
+(`.github/workflows/catalog-audit.yml`, weekly, also runnable via
+`npm run audit:catalog`) probes every external dependency of the built-in list:
+
+- `audioUrl` → the file must exist under `/public`,
+- `youtubeId` → YouTube's oEmbed endpoint must know the video **and** allow
+  embedding (the game plays via the IFrame API).
+
+Definitive failures land in `src/data/unavailableTracks.json` (machine-written,
+like `src/game/tuning.json`), which the catalog filters against at runtime —
+flagged tracks disappear from `/catalog` and the random pick until an audit sees
+them recover. When the flagged set changes, the workflow opens a PR (with a
+per-track report in `docs/catalog/audit-report.md`) for normal human review;
+inconclusive checks (network blips, rate limits) never change state.
+
 ## Future
 
 When real server-side analysis lands (see `aiChartGenerationPlan.md`), generated
