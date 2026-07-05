@@ -1,0 +1,72 @@
+name: Catalog audit
+
+# Scheduled rot check for the track catalog.
+#
+# CI proves the code builds; it cannot prove the catalog is still PLAYABLE.
+# A track's YouTube video can be deleted/privated/blocked from embedding, and a
+# bundled audio file can go missing, all without any commit. On a schedule this
+# workflow probes every external dependency of the built-in track list
+# (scripts/audit-catalog.mjs) and, when something rotted or recovered, opens a
+# PR updating src/data/unavailableTracks.json — the machine-writable list the
+# app uses to hide broken tracks — plus a human-readable report.
+#
+# The PR is meant for normal human review + merge (no auto-merge). Note that a
+# PR opened with the default GITHUB_TOKEN does not trigger the CI workflow; set
+# the SELF_IMPROVE_TOKEN secret (same one the self-improve loop uses) if you
+# want CI checks to appear on these PRs too.
+
+on:
+  schedule:
+    # Weekly, Tuesday 06:17 UTC — offset from the Monday Dependabot/self-improve
+    # runs so the bots don't stack their PRs on the same morning.
+    - cron: "17 6 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: catalog-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Audit catalog track sources
+        id: audit
+        run: node scripts/audit-catalog.mjs
+
+      - name: Open pull request
+        if: ${{ steps.audit.outputs.changed == 'true' }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.SELF_IMPROVE_TOKEN || secrets.GITHUB_TOKEN }}
+          branch: auto/catalog-audit
+          delete-branch: true
+          commit-message: "chore(catalog): update unavailable-track list from audit"
+          title: "Catalog audit: unavailable-track list changed"
+          body: |
+            This PR was opened automatically by the **weekly catalog audit**.
+
+            It probed every external dependency of the built-in track list
+            (YouTube videos via oEmbed, bundled audio files on disk) and the set
+            of unavailable tracks changed — something rotted, or a previously
+            flagged track recovered. See `docs/catalog/audit-report.md` in this
+            PR for the per-track results.
+
+            Merging updates `src/data/unavailableTracks.json`, which the catalog
+            filters against at runtime, so broken tracks stop being offered to
+            players immediately. Only definitive failures (404/gone, embedding
+            disabled, missing file) are flagged, and only after a retry —
+            network blips keep the previous state.
+          labels: |
+            automated
+            catalog

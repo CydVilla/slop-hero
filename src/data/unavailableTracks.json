@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-05",
+  "notes": "Machine-written by scripts/audit-catalog.mjs (see .github/workflows/catalog-audit.yml). Tracks listed here are hidden from the catalog until the audit sees them recover. Do not hand-edit except to force-hide a track.",
+  "tracks": []
+}

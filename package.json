@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "analyze:metrics": "node scripts/apply-tuning.mjs"
+    "analyze:metrics": "node scripts/apply-tuning.mjs",
+    "audit:catalog": "node scripts/audit-catalog.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
