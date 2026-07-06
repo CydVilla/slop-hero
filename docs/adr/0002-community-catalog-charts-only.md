@@ -49,8 +49,8 @@ scale, revisit if the catalog grows.
 - Users can publish and everyone can play their charts — with music whenever
   the chart is YouTube-backed, silently otherwise.
 - We never hold copyrighted audio, and a database row costs KBs, not MBs.
-- A chart made against an uploaded audio file plays silently for others; the
-  editor says so before publishing. A future improvement could prompt for a
-  matching YouTube link at publish time.
+- A chart made against an uploaded audio file plays silently for others
+  unless a matching YouTube link is supplied — the editor prompts for one at
+  publish time and says exactly what will happen either way.
 - No accounts means no edit/delete-your-own-chart flow yet; that would come
   with whatever identity approach a future ADR picks.

@@ -26,7 +26,9 @@ behind these changes live in [`docs/adr/`](./docs/adr/).
   from the current song, a saved song, or a blank grid; tap cells on a
   beat-snapped grid (1, 1/2, or 1/4 beat) to place and remove notes; edit
   title/artist/BPM/difficulty; then test-play in the real game, save to your
-  device, or publish to the community catalog.
+  device, or publish to the community catalog. When a chart has no video of
+  its own, publishing prompts for a matching YouTube link so other players
+  hear music instead of silent mode.
   ([ADR-0003](./docs/adr/0003-chart-editor-v1-scope.md))
 - `CHANGELOG.md` (this file) and `docs/adr/` for architecture decision
   records.

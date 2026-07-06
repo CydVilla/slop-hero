@@ -300,6 +300,10 @@
   max-width: 320px;
 }
 
+.ytField {
+  max-width: 460px;
+}
+
 .actionBtns {
   display: flex;
   gap: 10px;

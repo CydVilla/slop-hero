@@ -24,6 +24,7 @@ import {
   saveSong,
   type StoredSong,
 } from "@/lib/songLibrary";
+import { parseYouTubeId } from "@/lib/youtube";
 import type { ChartNote, Difficulty, Lane, RhythmChart } from "@/game/types";
 
 import styles from "./editor.module.css";
@@ -147,6 +148,9 @@ export default function EditorPage(): React.JSX.Element {
     "idle" | "publishing" | "published"
   >("idle");
   const [publishError, setPublishError] = useState<string | null>(null);
+  // Pasted at publish time when the source has no video of its own, so other
+  // players can hear music instead of getting silent mode.
+  const [publishYtInput, setPublishYtInput] = useState("");
   const [showJson, setShowJson] = useState(false);
 
   // Object URLs created here (library audio) — revoke on replacement/unmount.
@@ -356,6 +360,23 @@ export default function EditorPage(): React.JSX.Element {
 
   const publish = useCallback(async () => {
     if (!loaded) return;
+
+    // Resolve the video that ships with the chart: the source's own, or one
+    // pasted into the publish field. A non-empty field that doesn't parse is
+    // a hard stop — silently publishing a silent chart would be surprising.
+    let youtubeId = loaded.source.youtubeId;
+    const pasted = publishYtInput.trim();
+    if (!youtubeId && pasted) {
+      const parsed = parseYouTubeId(pasted);
+      if (!parsed) {
+        setPublishError(
+          "That doesn't look like a YouTube link or video id — fix it or clear the field to publish without music.",
+        );
+        return;
+      }
+      youtubeId = parsed;
+    }
+
     setPublishState("publishing");
     setPublishError(null);
     try {
@@ -366,7 +387,7 @@ export default function EditorPage(): React.JSX.Element {
         difficulty: loaded.difficulty,
         bpm: loaded.bpm,
         durationSeconds: Math.max(1, Math.round(loaded.durationMs / 1000)),
-        youtubeId: loaded.source.youtubeId,
+        youtubeId,
         chart: currentChart(loaded),
       });
       setPublishState("published");
@@ -374,7 +395,7 @@ export default function EditorPage(): React.JSX.Element {
       setPublishState("idle");
       setPublishError(e instanceof Error ? e.message : "Publishing failed.");
     }
-  }, [loaded, contributor]);
+  }, [loaded, contributor, publishYtInput]);
 
   // ---- Render -----------------------------------------------------------
 
@@ -663,6 +684,26 @@ export default function EditorPage(): React.JSX.Element {
               />
             </label>
 
+            {communityConfigured && !loaded.source.youtubeId && (
+              <label className={`${styles.field} ${styles.ytField}`}>
+                <span className={styles.fieldLabel}>
+                  YouTube link for playback (recommended when publishing)
+                </span>
+                <input
+                  type="url"
+                  inputMode="url"
+                  className={styles.textInput}
+                  placeholder="https://www.youtube.com/watch?v=…"
+                  value={publishYtInput}
+                  onChange={(e) => {
+                    setPublishYtInput(e.target.value);
+                    setPublishState("idle");
+                    setPublishError(null);
+                  }}
+                />
+              </label>
+            )}
+
             <div className={styles.actionBtns}>
               <button type="button" className={styles.primaryBtn} onClick={testPlay}>
                 ▶ Test play
@@ -708,11 +749,15 @@ export default function EditorPage(): React.JSX.Element {
             {communityConfigured && (
               <p className={styles.hint}>
                 Publishing shares your <strong>notes and timing</strong>
-                {loaded.source.youtubeId
-                  ? " plus the YouTube link"
-                  : ""} — never audio files.
-                {!loaded.source.youtubeId && loaded.source.audioUrl
-                  ? " This chart uses an uploaded audio file, which stays on your device; others will play it in silent mode."
+                {loaded.source.youtubeId || parseYouTubeId(publishYtInput.trim())
+                  ? " plus the YouTube link, so others hear the music"
+                  : ""}{" "}
+                — never audio files.
+                {!loaded.source.youtubeId &&
+                !parseYouTubeId(publishYtInput.trim())
+                  ? loaded.source.audioUrl
+                    ? " Your uploaded audio stays on this device — paste a matching YouTube link above so others hear music, or publish as-is for silent play."
+                    : " Paste a YouTube link above so others hear music; without one the chart plays silently."
                   : ""}
               </p>
             )}
