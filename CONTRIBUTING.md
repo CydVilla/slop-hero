@@ -14,7 +14,7 @@ welcome.
 
 ## Getting started
 
-Requirements: **Node 18+** (Node 22 recommended) and npm.
+Requirements: **Node 18+** (Node 24 recommended — matches production) and npm.
 
 ```bash
 git clone <your-fork-url>

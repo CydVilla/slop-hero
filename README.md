@@ -137,12 +137,13 @@ The game keeps a data-driven feedback loop that improves itself over time:
    `src/game/tuning.json` (+ a report). The existing **CI** gate must pass before
    it can merge, so a bad tune can't land unreviewed.
 
-Full write-up (privacy, storage, Heroku deploy, how to enable the loop, how to
+Full write-up (privacy, storage, Vercel deploy, how to enable the loop, how to
 extend it): [`docs/metricsAndSelfImprovement.md`](./docs/metricsAndSelfImprovement.md).
 
-**Deploying:** Heroku Postgres is supported out of the box — attach the add-on,
-push, and `DATABASE_URL` switches the metrics store from the local JSONL file to
-Postgres. See the doc for exact CLI steps and GitHub secrets.
+**Deploying:** the app runs on Vercel with Neon Postgres — attach a Neon
+database to the Vercel project and `DATABASE_URL` switches the metrics store
+from the local JSONL file to Postgres. See the doc for exact steps and GitHub
+secrets.
 
 ## How to play
 
@@ -314,4 +315,4 @@ the plans:
 ## Tech stack
 
 Next.js (App Router) · React · TypeScript (strict) · Canvas 2D · Web Audio API ·
-CSS Modules. Local-first dev; Heroku Postgres for durable server metrics in production.
+CSS Modules. Local-first dev; Neon Postgres (via Vercel) for durable server metrics in production.

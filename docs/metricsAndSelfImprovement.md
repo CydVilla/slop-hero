@@ -45,14 +45,16 @@ One event per finished play-through (`PlaySessionEvent` in
 
 | Environment | Backend | How |
 |-------------|---------|-----|
-| **Production (Heroku)** | Heroku Postgres | `DATABASE_URL` is set by the add-on |
+| **Production (Vercel)** | Neon Postgres | `DATABASE_URL` is set by the Neon integration |
 | **Local dev** | JSON Lines file | default `.data/metrics.jsonl` (override with `METRICS_FILE`) |
 
 When `DATABASE_URL` is present, events are inserted into a `play_sessions`
 table via a shared `pg` pool (`src/lib/metrics/db.ts`). Without it, the original
 file store is used — zero setup for local work. In both cases writes fail softly
 (read-only disk, unreachable DB) and the dashboard falls back to per-device
-localStorage data.
+localStorage data. Note that the file store does **not** persist on Vercel's
+ephemeral serverless filesystem — in production, server-side metrics require
+the database.
 
 API routes (all Node runtime, `force-dynamic`):
 
@@ -106,9 +108,9 @@ a bad tune can't land unreviewed.
 ### Enabling it
 
 1. Deploy the app somewhere `/api/metrics/insights` is reachable (see
-   [Deploying to Heroku](#deploying-to-heroku) below).
+   [Deploying to Vercel](#deploying-to-vercel) below).
 2. In the GitHub repo, set a **variable or secret** `METRICS_ENDPOINT` to the
-   deployed base URL (e.g. `https://your-app.herokuapp.com`). The workflow
+   deployed base URL (e.g. `https://your-app.vercel.app`). The workflow
    fetches `${METRICS_ENDPOINT}/api/metrics/insights`. For a dry run without a
    deployment, set `METRICS_FILE` to a committed fixtures path instead.
 3. Optional: add a `SELF_IMPROVE_TOKEN` **secret** — a PAT with `repo` scope — so
@@ -121,35 +123,36 @@ Run it locally against fixtures:
 METRICS_FILE=docs/metrics/sample-insights.json npm run analyze:metrics
 ```
 
-## 7. Deploying to Heroku
+## 7. Deploying to Vercel
 
-Slop Hero ships with a `Procfile` (`web: npm start`) and `"engines": { "node":
-"22.x" }` in `package.json`. `next start` honors Heroku's `$PORT` automatically.
+Slop Hero is a standard Next.js app — import the GitHub repo into a Vercel
+project and every push to `main` deploys automatically. `"engines": { "node":
+"24.x" }` in `package.json` should match the Node version in the Vercel
+project settings.
 
 ### One-time provisioning
 
-```bash
-# Create the app (pick your own name)
-heroku create slop-hero
+1. **Import the repo** at vercel.com → New Project → `CydVilla/slop-hero`.
+   Defaults are fine; no build configuration is needed.
+2. **Attach Postgres**: project → **Storage** → **Create Database** →
+   **Neon (Postgres)**, connected to the **Production** environment with no
+   custom env-var prefix. The integration creates `DATABASE_URL` (pooled),
+   which is exactly what `src/lib/metrics/db.ts` reads. The `play_sessions`
+   table is created automatically on first write.
+3. **Redeploy** so the new environment variables take effect.
 
-# Attach a small Postgres plan (sets DATABASE_URL automatically)
-heroku addons:create heroku-postgresql:essential-0
+Verify: `curl https://<your-app>.vercel.app/api/metrics/insights` should return
+JSON with `summary` and `report` keys. Then play a song and check
+`/dashboard` → **All players** — the session count ticking up proves writes to
+Postgres work end to end. (If the curl returns a Vercel authentication page,
+disable Deployment Protection for production — the self-improve workflow needs
+to reach this endpoint unauthenticated.)
 
-# Deploy (use your branch name if not on main)
-git push heroku main:main
-
-# Confirm DATABASE_URL and other config
-heroku config
-```
-
-After deploy, open `/dashboard` and play a song — the **All players** tab should
-reflect server-wide aggregates once events land in Postgres.
-
-### Config vars (Heroku)
+### Environment variables (Vercel)
 
 | Var | Required | Purpose |
 |-----|----------|---------|
-| `DATABASE_URL` | auto (Postgres add-on) | Durable metrics store |
+| `DATABASE_URL` | auto (Neon integration) | Durable metrics store |
 | `YOUTUBE_API_KEY` | optional | In-app YouTube search on `/upload` |
 
 No secrets need to be committed to the repo.
