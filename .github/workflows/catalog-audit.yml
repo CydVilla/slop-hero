@@ -46,7 +46,7 @@ jobs:
 
       - name: Open pull request
         if: ${{ steps.audit.outputs.changed == 'true' }}
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.SELF_IMPROVE_TOKEN || secrets.GITHUB_TOKEN }}
           branch: auto/catalog-audit
