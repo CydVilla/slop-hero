@@ -17,8 +17,14 @@ import { generateAutoChart } from "@/game/autoMapper";
 import { chartDurationMs } from "@/game/chartUtils";
 import type { Difficulty, RhythmChart } from "@/game/types";
 import type { ActiveSong } from "@/lib/activeSong";
+import { listSongs, type StoredSong } from "@/lib/songLibrary";
 
-export type TrackSource = "built-in" | "session";
+/**
+ * - "built-in": ships with the repo (royalty-free audio in /public/tracks).
+ * - "session":  added this browser session; may hold a live blob: audio URL.
+ * - "library":  restored from the device's persistent IndexedDB library.
+ */
+export type TrackSource = "built-in" | "session" | "library";
 
 export interface CatalogTrack {
   id: string;
@@ -102,8 +108,9 @@ const builtInTracks: CatalogTrack[] = [
 ];
 
 /**
- * Tracks the user uploaded during this browser session. In-memory only: they
- * are lost on reload because their audio is a session-scoped blob URL.
+ * Tracks the user added during this browser session. Kept in memory for
+ * instant catalog updates; the durable copy lives in the IndexedDB library
+ * (src/lib/songLibrary.ts) and is merged in via refreshLibraryTracks().
  */
 let sessionTracks: CatalogTrack[] = [];
 
@@ -114,6 +121,54 @@ export function addSessionTrack(track: CatalogTrack): void {
 
 export function getSessionTracks(): readonly CatalogTrack[] {
   return sessionTracks;
+}
+
+/**
+ * Library tracks restored from IndexedDB. Refreshed on demand (catalog mount);
+ * audio blobs get a fresh object URL each refresh, and the previous URLs are
+ * revoked so repeated visits don't leak.
+ */
+let libraryTracks: CatalogTrack[] = [];
+let libraryUrls: string[] = [];
+
+/** Convert a persisted song into a catalog entry. */
+function storedSongToTrack(song: StoredSong): CatalogTrack {
+  let audioUrl: string | undefined;
+  if (song.audio) {
+    audioUrl = URL.createObjectURL(song.audio);
+    libraryUrls.push(audioUrl);
+  }
+  return {
+    id: song.id,
+    title: song.title,
+    artist: song.artist,
+    contributor: song.contributor,
+    difficulty: song.difficulty,
+    bpm: song.bpm,
+    durationSeconds: song.durationSeconds,
+    addedAt: song.addedAt,
+    source: "library",
+    audioUrl,
+    youtubeId: song.youtubeId,
+    build: () => song.chart,
+  };
+}
+
+/**
+ * Reload the persistent library into the in-memory catalog. Call from client
+ * components (an effect) before reading getCatalog() when the saved songs
+ * should be visible. Safe to call repeatedly.
+ */
+export async function refreshLibraryTracks(): Promise<readonly CatalogTrack[]> {
+  const songs = await listSongs();
+  for (const url of libraryUrls) URL.revokeObjectURL(url);
+  libraryUrls = [];
+  libraryTracks = songs.map(storedSongToTrack);
+  return libraryTracks;
+}
+
+export function getLibraryTracks(): readonly CatalogTrack[] {
+  return libraryTracks;
 }
 
 /**
@@ -129,9 +184,15 @@ const availableBuiltInTracks: CatalogTrack[] = ((): CatalogTrack[] => {
   return available.length > 0 ? available : builtInTracks;
 })();
 
-/** The full catalog: session uploads first, then the built-in library. */
+/**
+ * The full catalog: this session's additions first, then persisted library
+ * songs (minus any already present this session — a fresh upload exists in
+ * both), then the built-in library.
+ */
 export function getCatalog(): CatalogTrack[] {
-  return [...sessionTracks, ...availableBuiltInTracks];
+  const sessionIds = new Set(sessionTracks.map((t) => t.id));
+  const restored = libraryTracks.filter((t) => !sessionIds.has(t.id));
+  return [...sessionTracks, ...restored, ...availableBuiltInTracks];
 }
 
 export function getTrackById(id: string): CatalogTrack | undefined {
@@ -163,7 +224,13 @@ export function trackToActiveSong(track: CatalogTrack): ActiveSong {
     subtitle: `${track.artist} · added by ${track.contributor}`,
     meta: {
       trackId: track.id,
-      source: track.youtubeId ? "youtube" : track.source,
+      // Metrics keep their original source vocabulary: user-added tracks
+      // (session or restored library) both report "session".
+      source: track.youtubeId
+        ? "youtube"
+        : track.source === "built-in"
+          ? "built-in"
+          : "session",
       difficulty: track.difficulty,
       bpm: track.bpm,
       artist: track.artist,

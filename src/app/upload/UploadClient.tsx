@@ -8,8 +8,32 @@ import { UploadPanel, type UploadResult } from "@/components/UploadPanel";
 import { addSessionTrack, trackToActiveSong, type CatalogTrack } from "@/data/tracks";
 import { chartDurationMs } from "@/game/chartUtils";
 import { setActiveSong } from "@/lib/activeSong";
+import { blobFromObjectUrl, saveSong, type StoredSong } from "@/lib/songLibrary";
 
 import styles from "./upload.module.css";
+
+/**
+ * Persist a fresh upload to the device library so it survives reloads. Runs
+ * after navigation kicks off; failures are silent (the song still plays this
+ * session, exactly like before persistence existed).
+ */
+async function persistTrack(track: CatalogTrack, result: UploadResult): Promise<void> {
+  const song: StoredSong = {
+    id: track.id,
+    title: track.title,
+    artist: track.artist,
+    contributor: track.contributor,
+    difficulty: track.difficulty,
+    bpm: track.bpm,
+    durationSeconds: track.durationSeconds,
+    addedAt: track.addedAt,
+    savedAt: Date.now(),
+    youtubeId: result.youtubeId,
+    audio: result.audioUrl ? await blobFromObjectUrl(result.audioUrl) : undefined,
+    chart: result.chart,
+  };
+  await saveSong(song);
+}
 
 export function UploadClient({
   youtubeOnly = false,
@@ -23,7 +47,7 @@ export function UploadClient({
       // Register the upload in the (session-scoped) catalog so it shows up
       // alongside built-in tracks with attribution.
       const track: CatalogTrack = {
-        id: `session-${Date.now()}`,
+        id: `song-${Date.now()}`,
         title: result.chart.title,
         artist: result.chart.artist ?? "Your upload",
         contributor: result.contributor,
@@ -38,6 +62,9 @@ export function UploadClient({
       };
       addSessionTrack(track);
       setActiveSong(trackToActiveSong(track));
+      // Save to the persistent device library in the background so the song
+      // is still in the catalog after a reload — no re-upload, no re-search.
+      void persistTrack(track, result).catch(() => {});
       router.push("/play");
     },
     [router],
@@ -66,7 +93,8 @@ export function UploadClient({
                 Pick an audio file or Clone Hero song (.sng / .zip / .chart /
                 .mid), or search YouTube (or paste a link). Files stay in your
                 browser — nothing is uploaded to a server. We&apos;ll generate a
-                playable chart and add it to the catalog for this session.
+                playable chart and save it to your device&apos;s library, so
+                it&apos;s still in the catalog next time (no re-uploading).
               </>
             )}
           </p>
