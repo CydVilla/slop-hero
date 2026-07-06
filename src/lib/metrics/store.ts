@@ -2,7 +2,7 @@
  * Server-side metrics store.
  *
  * Automatically selects a backend:
- * - `DATABASE_URL` set → Heroku Postgres (durable, shared across dynos)
+ * - `DATABASE_URL` set → Postgres (durable, shared — Neon via Vercel in production)
  * - otherwise → JSON Lines file under `.data/metrics.jsonl` (local dev)
  *
  * Writes fail softly everywhere: telemetry must never crash the app.
