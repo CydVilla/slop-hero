@@ -151,3 +151,46 @@
 .playBtn:active {
   transform: translateY(1px);
 }
+
+.playBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 8px 0 0;
+}
+
+.sectionHint {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+  max-width: 720px;
+}
+
+.removeBtn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.removeBtn:hover {
+  color: #fca5a5;
+  border-color: rgba(252, 165, 165, 0.4);
+}
+
+.footerBtns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

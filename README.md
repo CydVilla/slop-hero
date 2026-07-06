@@ -21,6 +21,15 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 - 🎸 **Clone Hero import**: drop a `.sng`, a `.zip` song folder, an unzipped
   **song folder** (drag-and-drop or "Choose folder"), or a bare `.chart` /
   `.mid` and play it on the touchscreen.
+- 💾 **Your songs stick around** — uploads, imports, and YouTube picks are
+  saved on your device (IndexedDB, audio included) and restored into the
+  catalog on every visit. No re-uploading, no re-searching.
+- ✏️ **Chart editor** (`/editor`) — start from the current song, a saved song,
+  or a blank grid; tap beat-snapped cells to place notes; test-play, save to
+  your device, or publish.
+- 🌐 **Community charts** — publish your chart to the shared catalog for
+  everyone (notes + optional YouTube link only, never audio files). Backed by
+  the same Postgres database as the metrics.
 - ⏱️ Web Audio API as the timing source (precise, monotonic clock).
 - 🎯 Five lanes (green/red/yellow/blue/orange), large touch targets.
 - 🎸 **Hold notes (sustains)** — Guitar Hero / Rock Band style: tap the head, then
@@ -300,17 +309,20 @@ dev server, check `/catalog`, and open a PR.
 ## Not built yet (intentionally)
 
 Server-side ML audio analysis, stem separation, multi-stem mixing, accounts,
-payments, a persistent online song library, copyrighted-song hosting, and native
-Tesla integration. (Anonymous, gameplay-only metrics **and** an autonomous
-self-improvement loop that PRs bounded tuning changes **are** built — see
-`docs/metricsAndSelfImprovement.md`.) (Client-side onset/tempo analysis **and** Clone Hero import —
-`.sng` / `.zip` / `.chart` / `.mid` — **are** built; see above.) See `docs/` for
-the plans:
+payments, copyrighted-song hosting, and native Tesla integration. (Anonymous,
+gameplay-only metrics **and** an autonomous self-improvement loop that PRs
+bounded tuning changes **are** built — see `docs/metricsAndSelfImprovement.md`.)
+(Client-side onset/tempo analysis, Clone Hero import — `.sng` / `.zip` /
+`.chart` / `.mid` —, a persistent device song library, the chart editor, and a
+shared community chart catalog **are** built; see above.) See `docs/` for the
+plans:
 
 - `docs/aiChartGenerationPlan.md` — real chart generation pipeline.
 - `docs/serverSideAudioAnalysis.md` — where heavy DSP/ML should run.
 - `docs/cloneHeroImportPlan.md` — Clone Hero import (incl. current behavior).
 - `docs/trackCatalog.md` — catalog data model & how to add tracks.
+- `docs/adr/` — architecture decision records (why things are built this way).
+- `CHANGELOG.md` — what changed, when.
 
 ## Tech stack
 
