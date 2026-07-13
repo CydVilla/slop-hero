@@ -109,4 +109,27 @@ describe("sanitizeCommunitySubmission", () => {
     // Latest note end is the hold: 1500ms + 800ms = 2300ms → ceil → 3 seconds.
     expect(res.value.durationSeconds).toBe(3);
   });
+
+  it("carries valid star phrases and HOPO flags, drops junk values", () => {
+    const body = validBody();
+    (body.chart as Record<string, unknown>).notes = [
+      { timeMs: 500, lane: 0, starPhrase: 0, hopo: true },
+      { timeMs: 1000, lane: 1, starPhrase: 0 },
+      { timeMs: 1500, lane: 2, starPhrase: -1, hopo: "yes" }, // both junk
+      { timeMs: 2000, lane: 3, starPhrase: 2.5, hopo: false }, // non-int, false
+      { timeMs: 2500, lane: 4, starPhrase: 999_999 }, // over the cap
+    ];
+    const res = sanitizeCommunitySubmission(body);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const notes = res.value.chart.notes;
+    expect(notes[0]?.starPhrase).toBe(0);
+    expect(notes[0]?.hopo).toBe(true);
+    expect(notes[1]?.starPhrase).toBe(0);
+    expect(notes[2]?.starPhrase).toBeUndefined();
+    expect(notes[2]?.hopo).toBeUndefined();
+    expect(notes[3]?.starPhrase).toBeUndefined();
+    expect(notes[3]?.hopo).toBeUndefined();
+    expect(notes[4]?.starPhrase).toBeUndefined();
+  });
 });

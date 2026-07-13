@@ -12,6 +12,7 @@ import {
   msToBeats,
   sortNotes,
 } from "@/game/chartUtils";
+import { groupStarPhrases } from "@/game/starPower";
 import { getActiveSong, setActiveSong } from "@/lib/activeSong";
 import {
   fetchCommunityList,
@@ -41,6 +42,10 @@ import styles from "./editor.module.css";
  * Deliberate v1 limits (docs/adr/0003): tap notes only (existing holds render
  * and can be deleted, not authored), no waveform, no undo stack — the grid
  * itself is the undo (tap again to remove).
+ *
+ * The ★ brush paints star-power phrase membership onto existing notes
+ * (docs/adr/0005): touching starred notes group into one phrase at build time,
+ * so authored charts control exactly which runs bank star power.
  */
 
 const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard", "expert"];
@@ -140,6 +145,9 @@ export default function EditorPage(): React.JSX.Element {
 
   const [snap, setSnap] = useState<number>(0.5);
   const [page, setPage] = useState(0);
+  // "note" places/removes notes; "star" paints star-power phrase membership
+  // onto existing notes (contiguous starred runs become phrases on build).
+  const [brush, setBrush] = useState<"note" | "star">("note");
 
   const [contributor, setContributor] = useState("");
   const [communityConfigured, setCommunityConfigured] = useState(false);
@@ -252,6 +260,25 @@ export default function EditorPage(): React.JSX.Element {
           const s = Math.round(msToBeats(n.timeMs, prev.bpm) / snap);
           return s === slot && n.lane === lane;
         });
+
+        // Star brush: toggle phrase membership on the notes already there.
+        // Phrase ids are renumbered from contiguity at build time, so while
+        // editing "starred" is just a flag (starPhrase 0).
+        if (brush === "star") {
+          if (existing.length === 0) return prev;
+          const ids = new Set(existing.map((n) => n.id));
+          const anyStarred = existing.some((n) => n.starPhrase !== undefined);
+          const notes = prev.notes.map((n) => {
+            if (!ids.has(n.id)) return n;
+            if (anyStarred) {
+              const { starPhrase: _cleared, ...rest } = n;
+              return rest;
+            }
+            return { ...n, starPhrase: 0 };
+          });
+          return { ...prev, notes };
+        }
+
         let notes: ChartNote[];
         if (existing.length > 0) {
           const ids = new Set(existing.map((n) => n.id));
@@ -272,7 +299,7 @@ export default function EditorPage(): React.JSX.Element {
       setSaveState("idle");
       setPublishState("idle");
     },
-    [snap],
+    [snap, brush],
   );
 
   const extend = useCallback(() => {
@@ -563,6 +590,22 @@ export default function EditorPage(): React.JSX.Element {
 
           <section className={styles.gridPanel}>
             <div className={styles.gridToolbar}>
+              <div className={styles.chips} role="group" aria-label="Brush">
+                <button
+                  type="button"
+                  className={`${styles.chip} ${brush === "note" ? styles.chipActive : ""}`}
+                  onClick={() => setBrush("note")}
+                >
+                  ● Notes
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.chip} ${brush === "star" ? styles.chipActive : ""}`}
+                  onClick={() => setBrush("star")}
+                >
+                  ★ Star phrases
+                </button>
+              </div>
               <div className={styles.chips}>
                 {SNAPS.map((s) => (
                   <button
@@ -606,9 +649,9 @@ export default function EditorPage(): React.JSX.Element {
             </div>
 
             <p className={styles.hint}>
-              Tap a cell to place a note; tap again to remove it. Downbeats are
-              brighter. Changing BPM moves the grid, not the notes you already
-              placed.
+              {brush === "note"
+                ? "Tap a cell to place a note; tap again to remove it. Downbeats are brighter. Changing BPM moves the grid, not the notes you already placed."
+                : "Tap existing notes to star them (tap again to unstar). Touching starred notes form one star phrase — hit every note of a phrase in-game to bank star power. Leave gaps between phrases."}
             </p>
 
             <div className={styles.gridScroll}>
@@ -648,20 +691,23 @@ export default function EditorPage(): React.JSX.Element {
                       const isHold = cellNotes.some(
                         (n) => (n.durationMs ?? 0) > 0,
                       );
+                      const isStar = cellNotes.some(
+                        (n) => n.starPhrase !== undefined,
+                      );
                       return (
                         <button
                           key={lane}
                           type="button"
-                          className={`${styles.cell} ${hasNote ? styles.cellOn : ""}`}
+                          className={`${styles.cell} ${hasNote ? styles.cellOn : ""} ${isStar ? styles.cellStar : ""}`}
                           style={
                             hasNote
                               ? ({ "--lane": LANE_COLORS[lane] } as React.CSSProperties)
                               : undefined
                           }
-                          aria-label={`Beat ${beat}, lane ${lane + 1}${hasNote ? " — has note" : ""}`}
+                          aria-label={`Beat ${beat}, lane ${lane + 1}${hasNote ? " — has note" : ""}${isStar ? " (star phrase)" : ""}`}
                           onClick={() => toggleCell(beat, lane)}
                         >
-                          {hasNote ? (isHold ? "▮" : "●") : ""}
+                          {hasNote ? (isStar ? "★" : isHold ? "▮" : "●") : ""}
                         </button>
                       );
                     })}
@@ -779,7 +825,11 @@ export default function EditorPage(): React.JSX.Element {
   );
 }
 
-/** Assemble the RhythmChart from the current editor state. */
+/**
+ * Assemble the RhythmChart from the current editor state. Star markings
+ * painted with the ★ brush are renumbered into contiguous phrases here, so
+ * the played/saved/published chart always carries clean phrase ids.
+ */
 function currentChart(loaded: LoadedChart, id = "editor"): RhythmChart {
   return {
     id,
@@ -788,6 +838,6 @@ function currentChart(loaded: LoadedChart, id = "editor"): RhythmChart {
     bpm: loaded.bpm,
     offsetMs: loaded.offsetMs,
     difficulty: loaded.difficulty,
-    notes: loaded.notes,
+    notes: groupStarPhrases(loaded.notes),
   };
 }

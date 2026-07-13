@@ -20,11 +20,13 @@ import {
 } from "./scoring";
 import {
   activateStarPower,
+  addStarPowerMeter,
   awardStarPhrase,
   buildPhraseIndex,
   canActivateStarPower,
   createStarPower,
   ensureStarPhrases,
+  groupStarPhrases,
   markStarPhrases,
   registerStarNoteHit,
   registerStarNoteMiss,
@@ -109,6 +111,70 @@ describe("star power meter", () => {
       0,
     );
     expect(starPowerScoreMultiplier(active)).toBe(STAR_POWER.scoreMultiplier);
+  });
+});
+
+describe("addStarPowerMeter (whammy trickle)", () => {
+  it("adds raw meter, clamped at full", () => {
+    let sp = addStarPowerMeter(createStarPower(), 0.1, 0);
+    expect(sp.meter).toBeCloseTo(0.1);
+    expect(sp.phrasesCompleted).toBe(0); // not a phrase award
+    sp = addStarPowerMeter(sp, 5, 0);
+    expect(sp.meter).toBe(1);
+  });
+
+  it("tops up an active run in place (drain restarts from the new level)", () => {
+    let sp = awardStarPhrase(awardStarPhrase(createStarPower(), 0), 0); // 0.5
+    sp = activateStarPower(sp, 0);
+    const later = 3000;
+    const before = starPowerMeterAt(sp, later);
+    sp = addStarPowerMeter(sp, 0.1, later);
+    expect(sp.active).toBe(true);
+    expect(starPowerMeterAt(sp, later)).toBeCloseTo(before + 0.1);
+  });
+
+  it("is a no-op (same object) for zero or negative gain", () => {
+    const sp = createStarPower();
+    expect(addStarPowerMeter(sp, 0, 100)).toBe(sp);
+    expect(addStarPowerMeter(sp, -0.2, 100)).toBe(sp);
+  });
+});
+
+describe("groupStarPhrases (editor ★ brush)", () => {
+  it("renumbers contiguous starred runs and splits on unstarred gaps", () => {
+    const notes = [
+      makeNote("a", 0, 0, 99), // starred (marker value irrelevant)
+      makeNote("b", 500, 1, 0), // starred, touching → same phrase
+      makeNote("c", 1000, 2), // unstarred → split
+      makeNote("d", 1500, 3, 0), // starred → new phrase
+    ];
+    const grouped = groupStarPhrases(notes);
+    const byId = new Map(grouped.map((n) => [n.id, n.starPhrase]));
+    expect(byId.get("a")).toBe(0);
+    expect(byId.get("b")).toBe(0);
+    expect(byId.get("c")).toBeUndefined();
+    expect(byId.get("d")).toBe(1);
+  });
+
+  it("a mixed chord (one starred lane) does not split the run", () => {
+    const notes = [
+      makeNote("a", 0, 0, 0),
+      makeNote("b", 500, 1, 0), // starred half of a chord
+      makeNote("c", 500, 2), // unstarred partner
+      makeNote("d", 1000, 3, 0),
+    ];
+    const grouped = groupStarPhrases(notes);
+    const byId = new Map(grouped.map((n) => [n.id, n.starPhrase]));
+    expect(byId.get("a")).toBe(0);
+    expect(byId.get("b")).toBe(0);
+    expect(byId.get("c")).toBeUndefined();
+    expect(byId.get("d")).toBe(0);
+  });
+
+  it("leaves fully-unstarred charts alone", () => {
+    const notes = [makeNote("a", 0, 0), makeNote("b", 500, 1)];
+    const grouped = groupStarPhrases(notes);
+    expect(grouped.every((n) => n.starPhrase === undefined)).toBe(true);
   });
 });
 

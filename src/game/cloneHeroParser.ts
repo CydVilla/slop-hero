@@ -11,10 +11,12 @@
  * tagged `type: "hold"` so the player must keep the lane pressed through the
  * tail. Open notes (.chart fret 7) map to a center lane. Star-power phrases
  * (`S 2` special events) import as authored star phrases on the notes they
- * cover; other modifier flags (forced/HOPO/tap) are dropped. MIDI star power
- * is not read (our minimal SMF reader has no note-off tracking), so MIDI
- * imports fall back to auto-marked phrases like every other source. Chords are
- * capped at 2 simultaneous notes to stay finger-playable.
+ * cover, and HOPOs import for real: natural spacing (65/192 of a beat, new
+ * lane, non-chord) plus authored forced (`N 5`, flips natural) and tap
+ * (`N 6`, always on) flags. MIDI star power / HOPO markers are not read (our
+ * minimal SMF reader has no note-off tracking), so MIDI imports fall back to
+ * play-time auto-marking like every other source. Chords are capped at 2
+ * simultaneous notes to stay finger-playable.
  *
  * Pure & dependency-free (no DOM); ZIP intake / audio object URLs live in
  * `src/lib/cloneHeroClient.ts`. See docs/cloneHeroImportPlan.md.
@@ -154,6 +156,44 @@ interface RawNote {
   lengthTicks: number;
   /** Index of the authored star-power phrase covering this note, if any. */
   starPhrase?: number;
+  /** Final HOPO state (natural spacing + forced/tap flags), when computed. */
+  hopo?: boolean;
+}
+
+/** Clone Hero's natural-HOPO spacing: 65 ticks at 192 resolution. */
+const HOPO_TICKS_AT_192 = 65;
+
+/**
+ * Compute each raw note's HOPO state in place: natural when a non-chord note
+ * sits within the spacing threshold of the previous note on a different lane;
+ * a forced flag (`N 5`) flips the natural state; a tap flag (`N 6`) is always
+ * on. Chords are never HOPOs. REQUIRES `raw` sorted ascending by tick.
+ */
+function applyHopoFlags(
+  raw: RawNote[],
+  resolution: number,
+  forcedTicks: ReadonlySet<number>,
+  tapTicks: ReadonlySet<number>,
+): void {
+  const gapTicks = Math.round((HOPO_TICKS_AT_192 * resolution) / 192);
+  for (let i = 0; i < raw.length; i += 1) {
+    const note = raw[i]!;
+    const isChord =
+      (i > 0 && raw[i - 1]!.tick === note.tick) ||
+      (i + 1 < raw.length && raw[i + 1]!.tick === note.tick);
+    let natural = false;
+    if (!isChord && i > 0) {
+      // Walk the previous time group (chord) — same lane anywhere kills it.
+      const prevTick = raw[i - 1]!.tick;
+      natural = note.tick - prevTick <= gapTicks;
+      for (let k = i - 1; k >= 0 && raw[k]!.tick === prevTick && natural; k -= 1) {
+        if (raw[k]!.lane === note.lane) natural = false;
+      }
+    }
+    if (tapTicks.has(note.tick)) note.hopo = true;
+    else if (forcedTicks.has(note.tick)) note.hopo = !natural && !isChord;
+    else note.hopo = natural;
+  }
 }
 
 /** An authored star-power phrase: covers ticks [tick, tick + lengthTicks). */
@@ -202,6 +242,7 @@ function assembleChart(
     };
     if (lengthMs > 0) note.durationMs = lengthMs;
     if (n.starPhrase !== undefined) note.starPhrase = n.starPhrase;
+    if (n.hopo !== undefined) note.hopo = n.hopo;
     return note;
   });
 
@@ -356,6 +397,8 @@ export function parseNotesChart(
   starPhrases.sort((a, b) => a.tick - b.tick);
 
   const raw: RawNote[] = [];
+  const forcedTicks = new Set<number>();
+  const tapTicks = new Set<number>();
   for (const line of sectionLines) {
     // `tick = N fret length`
     const m = line.match(/^\s*(\d+)\s*=\s*N\s+(\d+)\s+(\d+)/);
@@ -366,7 +409,8 @@ export function parseNotesChart(
     let lane: number | null = null;
     if (fret >= 0 && fret <= 4) lane = fret;
     else if (fret === 7) lane = 2; // open note → center lane
-    // fret 5 (forced) / 6 (tap) are modifiers, not notes → skip.
+    else if (fret === 5) forcedTicks.add(tick); // forced: flips natural HOPO
+    else if (fret === 6) tapTicks.add(tick); // tap: always a HOPO
     if (lane === null) continue;
     raw.push({
       tick,
@@ -375,6 +419,9 @@ export function parseNotesChart(
       starPhrase: starPhraseAt(starPhrases, tick),
     });
   }
+
+  raw.sort((a, b) => a.tick - b.tick || a.lane - b.lane);
+  applyHopoFlags(raw, resolution, forcedTicks, tapTicks);
 
   return assembleChart(raw, tickToMs, meta, difficulty);
 }

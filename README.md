@@ -25,8 +25,9 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
   saved on your device (IndexedDB, audio included) and restored into the
   catalog on every visit. No re-uploading, no re-searching.
 - ✏️ **Chart editor** (`/editor`) — start from the current song, a saved song,
-  or a blank grid; tap beat-snapped cells to place notes; test-play, save to
-  your device, or publish.
+  or a blank grid; tap beat-snapped cells to place notes and paint ★
+  star-power phrases with the star brush; test-play, save to your device, or
+  publish (authored phrases ship with the chart).
 - 🌐 **Community charts** — publish your chart to the shared catalog for
   everyone (notes + optional YouTube link only, never audio files). Backed by
   the same Postgres database as the metrics.
@@ -43,6 +44,12 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
   meter; at half a bar, tap the meter (or press Enter) to double all scoring
   while it drains, up to ×8 with the combo multiplier. Clone Hero imports keep
   their authored `S 2` phrases; every other chart gets phrases auto-marked.
+- 🤘 **HOPOs (hammer-ons / pull-offs)**, touch-adapted: ring-marked notes
+  auto-hit when they cross the line with their lane already held — rest or
+  slide a finger across lanes and fast runs play themselves, as long as the
+  previous note was hit. `.chart` imports keep authored forced/tap flags.
+- 🎚️ **Whammy** — wiggle the finger holding a ★ sustain (desktop: key
+  auto-repeat) to squeeze bonus star-power meter out of the tail.
 - ❤️ **Rock meter** — hits push the crowd gauge up, misses drag it down twice
   as hard; let it hit empty and you're booed off the stage (song fail).
 - 🌟 **Star rating** (0–5), live during play and on the results screen, based
@@ -178,19 +185,25 @@ secrets.
    normal note, then keep holding (finger down / key held) until the tail clears
    the hit line. Hold all the way for a bonus; let go early and the sustain
    drops (and your combo breaks).
-5. **Watch the rock meter** (the gauge in the score panel) — hits fill it,
+5. **Let the hammer-ons play themselves** — gems with a white ring are HOPOs.
+   If the previous note was hit and a finger is already resting on (or slid
+   onto) their lane when they cross the line, they fire automatically —
+   that's how you survive fast runs: keep fingers down and walk them across
+   the lanes instead of tapping every gem.
+6. **Watch the rock meter** (the gauge in the score panel) — hits fill it,
    misses drain it twice as fast. If it empties, you're booed off the stage
    and have to retry.
-6. **Bank star power** — some gems carry a white ★: they come in short
+7. **Bank star power** — some gems carry a white ★: they come in short
    phrases, and hitting *every* note of a phrase adds a quarter to the meter
-   at the bottom of the highway. Once it's at least half full, **tap the
-   meter** (desktop: **Enter** or **Shift**) to double all scoring while it
-   drains — stacked with the combo multiplier that's up to ×8. Completing
-   another phrase while it's blazing extends the run, and misses hurt the
-   rock meter only half as much.
-7. Chase the **stars** — the 0–5 rating next to your score grades the run by
+   at the bottom of the highway. Wiggle your finger on a held ★ sustain
+   (desktop: the held key's auto-repeat) to whammy extra meter out of it.
+   Once it's at least half full, **tap the meter** (desktop: **Enter** or
+   **Shift**) to double all scoring while it drains — stacked with the combo
+   multiplier that's up to ×8. Completing another phrase while it's blazing
+   extends the run, and misses hurt the rock meter only half as much.
+8. Chase the **stars** — the 0–5 rating next to your score grades the run by
    the average multiplier you sustain; 5★ takes a near-full combo.
-8. If notes feel early/late, nudge the **Calibration** offset.
+9. If notes feel early/late, nudge the **Calibration** offset.
 
 ## How upload & auto-charting works
 
@@ -238,8 +251,9 @@ audio), an **unzipped song folder** (drag the folder onto the dropzone, or use
 
 Adaptations for touch: sustains import as **playable holds** (their length is
 preserved and long-enough sustains must be held), chords are capped at 2 notes,
-and HOPO/forced/tap/star-power flags are dropped. Details and remaining work:
-`docs/cloneHeroImportPlan.md`.
+star-power phrases (`S 2`) import as real ★ phrases, and HOPOs import for real
+too — natural spacing plus authored forced (`N 5`) / tap (`N 6`) flags. Details
+and remaining work: `docs/cloneHeroImportPlan.md`.
 
 ## Architecture
 
@@ -270,7 +284,8 @@ src/
     tuning.ts/.json    # auto-tunable params the self-improvement loop may rewrite
     timing.ts          # offset/calibration math, note travel progress
     scoring.ts         # hit detection, rating, combo, misses, accuracy, holds, stars
-    starPower.ts       # star phrases (authored + auto-marked), meter machine
+    starPower.ts       # star phrases (authored + auto-marked), meter machine, whammy
+    hopo.ts            # hammer-ons: natural marking + held-lane auto-hit finder
     rockMeter.ts       # crowd gauge: gains/losses, zones, song-fail check
     chartUtils.ts      # ids, sorting, validation, runtime-state construction
     demoChart.ts       # built-in demo chart

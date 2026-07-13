@@ -51,8 +51,9 @@ docs/          # design + roadmap docs
 - **Strict TypeScript.** No `any`. Prefer explicit domain types and discriminated
   unions. Make illegal states hard to represent where it's cheap to do so.
 - **Pure logic in `src/game/*`.** Scoring, timing, hit detection, star power,
-  the rock meter, and chart utilities must be deterministic functions of their
-  inputs (no DOM/audio/React). This is what keeps them testable and reusable.
+  HOPOs, the rock meter, and chart utilities must be deterministic functions of
+  their inputs (no DOM/audio/React). This is what keeps them testable and
+  reusable.
 - **No React re-renders in the animation loop.** High-frequency state (note
   runtime, feedback, lane flashes, the star-power meter) lives in refs; React
   state is for low-frequency UI (score, phase, calibration). Continuous values

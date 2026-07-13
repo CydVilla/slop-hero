@@ -24,6 +24,7 @@ import styles from "./GameScreen.module.css";
 
 import { KEYBOARD_LANE_MAP } from "@/game/constants";
 import { chartDurationMs } from "@/game/chartUtils";
+import { ensureHopos } from "@/game/hopo";
 import { accuracyPercent, baseChartScore, isComplete, starRating } from "@/game/scoring";
 import { ensureStarPhrases } from "@/game/starPower";
 import type { RhythmChart } from "@/game/types";
@@ -54,10 +55,11 @@ export function GameScreen({
   subtitle,
   sessionMeta,
 }: GameScreenProps): React.JSX.Element {
-  // Every chart gets star-power phrases: authored ones (Clone Hero imports)
-  // pass through, everything else is auto-marked. Done once here so the game
-  // hook and the renderer agree on which notes are stars.
-  const chart = useMemo(() => ensureStarPhrases(rawChart), [rawChart]);
+  // Every chart gets star-power phrases and HOPO flags: authored ones (Clone
+  // Hero imports, editor charts) pass through, everything else is auto-marked.
+  // Done once here so the game hook and the renderer agree on which notes are
+  // stars / hammer-ons.
+  const chart = useMemo(() => ensureHopos(ensureStarPhrases(rawChart)), [rawChart]);
   // Denominator for the GH-style star rating (score ÷ base score).
   const baseScore = useMemo(() => baseChartScore(chart.notes), [chart]);
 
@@ -69,8 +71,17 @@ export function GameScreen({
   const audio = youtubeId ? youtube.engine : webAudio;
 
   const game = useRhythmGame(chart, audio);
-  const { pressLane, releaseLane, togglePause, start, restart, activateStarPower } =
-    game;
+  const {
+    pressLane,
+    releaseLane,
+    holdLane,
+    unholdLane,
+    whammyLane,
+    togglePause,
+    start,
+    restart,
+    activateStarPower,
+  } = game;
   const stars = starRating(game.score.score, baseScore);
 
   const [debug, setDebug] = useState({ song: 0, chart: 0 });
@@ -100,10 +111,15 @@ export function GameScreen({
   // Keyboard input (desktop testing only): A/S/D/F/G lanes, Space play/pause,
   // Enter or Shift unleashes star power. The primary input is tapping the notes
   // directly on the highway. Key-down presses (and begins a sustain); key-up
-  // releases it, mirroring touch.
+  // releases it, mirroring touch. A held key counts as a positional hold (so
+  // HOPOs auto-hit), and its auto-repeat acts as the whammy on star sustains.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
+      if (e.repeat) {
+        const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
+        if (lane !== undefined) whammyLane(lane);
+        return;
+      }
       if (e.code === "Space") {
         e.preventDefault();
         togglePause();
@@ -116,11 +132,13 @@ export function GameScreen({
       const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
       if (lane !== undefined) {
         pressLane(lane);
+        holdLane(lane);
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
       if (lane !== undefined) {
+        unholdLane(lane);
         releaseLane(lane);
       }
     };
@@ -130,7 +148,7 @@ export function GameScreen({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [pressLane, releaseLane, togglePause, activateStarPower]);
+  }, [pressLane, releaseLane, holdLane, unholdLane, whammyLane, togglePause, activateStarPower]);
 
   // Low-frequency debug clock (10 fps) so the calibration readout updates
   // without coupling to the animation loop.
@@ -229,6 +247,9 @@ export function GameScreen({
             onFrame={game.update}
             onLanePress={pressLane}
             onLaneRelease={releaseLane}
+            onLaneHold={holdLane}
+            onLaneUnhold={unholdLane}
+            onWhammy={whammyLane}
             onActivateStarPower={activateStarPower}
             combo={game.score.combo}
           />
@@ -259,7 +280,7 @@ export function GameScreen({
             subtitle={
               ytLoading
                 ? "Getting the YouTube player ready."
-                : "Tap each note as it reaches the line — don't let the rock meter hit empty. Nail the ★ phrases, then tap the bottom meter to unleash Star Power for double points. (Desktop: A S D F G, Enter for Star Power.)"
+                : "Tap each note as it reaches the line — don't let the rock meter hit empty. Ring-marked notes are hammer-ons: rest or slide a finger on their lane and they play themselves. Nail the ★ phrases (wiggle held ★ sustains for extra juice), then tap the bottom meter to unleash Star Power for double points. (Desktop: A S D F G, Enter for Star Power.)"
             }
             actionLabel="Start"
             onAction={start}

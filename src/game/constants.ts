@@ -89,6 +89,35 @@ export const STAR_POWER = {
 } as const;
 
 /**
+ * Hammer-ons / pull-offs, adapted for touch: a HOPO note auto-hits when it
+ * crosses the line while its lane is already held (finger resting or slid
+ * there) and the previous note was hit — fast runs play by sliding instead of
+ * re-tapping every gem.
+ */
+export const HOPO = {
+  /**
+   * Natural-HOPO spacing as a fraction of a beat (Clone Hero's 65/192): a
+   * non-chord note this close to the previous note, on a different lane,
+   * plays as a HOPO.
+   */
+  beatFraction: 65 / 192,
+  /** Spacing threshold (ms) when a chart doesn't know its BPM. */
+  fallbackGapMs: 170,
+} as const;
+
+/**
+ * Whammy, adapted for touch: wiggling the finger that's holding a star-phrase
+ * sustain (or mashing the held lane key via key-repeat on desktop) squeezes
+ * extra star-power meter out of the tail, GH style.
+ */
+export const WHAMMY = {
+  /** Meter gained per ms of actively-whammied sustain (a quarter bar per 4s). */
+  gainPerMs: 0.25 / 4000,
+  /** A wiggle within this window (ms) counts as "still whammying". */
+  activityWindowMs: 180,
+} as const;
+
+/**
  * Rock meter (the green/yellow/red crowd gauge). Hits nudge it up, misses drag
  * it down harder — let it hit empty and the crowd boos you off stage (song
  * fail). Values are fractions of the full gauge.

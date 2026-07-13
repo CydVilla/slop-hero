@@ -284,6 +284,13 @@
   color: var(--lane);
 }
 
+/* A note painted into a star-power phrase: gold star over the lane colour. */
+.cellStar {
+  color: #fde047;
+  border-color: rgba(253, 224, 71, 0.75);
+  box-shadow: 0 0 8px rgba(253, 224, 71, 0.35);
+}
+
 /* ---- actions ---- */
 
 .actions {
