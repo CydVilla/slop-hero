@@ -26,6 +26,13 @@ export interface ChartNote {
   /** Sustain length in ms. Undefined / 0 means a plain tap. */
   durationMs?: number;
   type?: NoteType;
+  /**
+   * Star-power phrase this note belongs to (Guitar Hero / Clone Hero style).
+   * Notes sharing an id form one phrase; hitting every note in the phrase
+   * charges the star-power meter. Undefined = a normal note. Imported charts
+   * keep their authored `S 2` phrases; other sources get phrases auto-marked.
+   */
+  starPhrase?: number;
 }
 
 export interface RhythmChart {
@@ -104,6 +111,11 @@ export interface HitFeedback {
    * the renderer can label it "HOLD" / "DROP" instead of a timing rating.
    */
   hold?: "completed" | "dropped";
+  /**
+   * Marks the celebratory "STAR POWER" flare pushed when a star phrase is
+   * completed (alongside the regular rating feedback for the hit itself).
+   */
+  star?: boolean;
 }
 
 /** Result of attempting to hit a note in a lane at a given time. */
@@ -140,4 +152,36 @@ export type HoldReleaseResult =
       kind: "none";
     };
 
-export type GamePhase = "idle" | "countdown" | "playing" | "paused" | "finished";
+export type GamePhase =
+  | "idle"
+  | "countdown"
+  | "playing"
+  | "paused"
+  | "finished"
+  /** The rock meter hit empty mid-song — booed off the stage, GH style. */
+  | "failed";
+
+/**
+ * Star-power meter state. The meter is stored as a 0..1 fraction; while active
+ * it drains linearly from `meter` starting at `activatedAtMs`, so the current
+ * level is derived (see starPowerMeterAt) rather than mutated every frame.
+ */
+export interface StarPowerState {
+  /** Stored meter fraction (0..1). While active: the level at activation/last award. */
+  meter: number;
+  active: boolean;
+  /** Song time (ms) the drain clock started; only meaningful while active. */
+  activatedAtMs: number;
+  /** Star phrases completed this run (for results / metrics). */
+  phrasesCompleted: number;
+}
+
+/** Progress of one star phrase during a run. */
+export interface StarPhraseProgress {
+  /** Notes in the phrase. */
+  total: number;
+  /** Notes hit so far. */
+  hit: number;
+  /** True once any note of the phrase was missed — the phrase awards nothing. */
+  broken: boolean;
+}

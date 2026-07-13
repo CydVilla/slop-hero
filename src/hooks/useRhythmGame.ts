@@ -39,6 +39,24 @@ import {
   resolveRelease,
   resolveTap,
 } from "@/game/scoring";
+import {
+  createRockMeter,
+  isRockMeterFailed,
+  rockMeterOnDrop,
+  rockMeterOnHit,
+  rockMeterOnMiss,
+} from "@/game/rockMeter";
+import {
+  activateStarPower as spActivate,
+  awardStarPhrase,
+  buildPhraseIndex,
+  createStarPower,
+  registerStarNoteHit,
+  registerStarNoteMiss,
+  starPowerScoreMultiplier,
+  tickStarPower,
+} from "@/game/starPower";
+import { playMissBuzz } from "@/lib/sfx";
 import type {
   ChartNote,
   GamePhase,
@@ -47,6 +65,8 @@ import type {
   NoteRuntimeState,
   RhythmChart,
   ScoreState,
+  StarPhraseProgress,
+  StarPowerState,
 } from "@/game/types";
 
 /** Minimal audio surface the game needs; keeps the hooks loosely coupled. */
@@ -72,12 +92,27 @@ export interface RhythmGame {
    */
   countdown: number;
   calibrationOffsetMs: number;
+  /**
+   * Star power meter/activation state (low-frequency mirror, updated on
+   * discrete events — awards, activation, depletion). The canvas reads
+   * `starPowerRef` instead and derives the smooth drain per frame.
+   */
+  starPower: StarPowerState;
+  /** Rock meter 0..1 — hits push it up, misses drag it down; empty = failed. */
+  rockMeter: number;
   /** Refs consumed by the renderer (do not read in JSX render path). */
   runtimeRef: React.RefObject<Map<string, NoteRuntimeState>>;
   feedbackRef: React.RefObject<HitFeedback[]>;
   laneFlashRef: React.RefObject<Record<Lane, number>>;
+  starPowerRef: React.RefObject<StarPowerState>;
   /** Read latest calibration without going through React state (for canvas). */
   getCalibrationOffsetMs: () => number;
+
+  /**
+   * Unleash banked star power (doubles scoring while it drains). No-op unless
+   * playing with at least half a bar stored.
+   */
+  activateStarPower: () => void;
 
   start: () => void;
   togglePause: () => void;
@@ -125,6 +160,11 @@ export function useRhythmGame(
   const [calibrationOffsetMs, setCalibrationOffsetMs] = useState(() =>
     defaultCalibrationOffsetMs(),
   );
+  // Star power + rock meter: the REFS are authoritative (read and updated
+  // inside the per-frame/per-tap hot paths); these states are display mirrors
+  // written through commitStarPower/commitRockMeter on discrete events only.
+  const [starPower, setStarPower] = useState<StarPowerState>(createStarPower);
+  const [rockMeter, setRockMeter] = useState<number>(createRockMeter);
 
   // Pending interval id for the pre-song countdown, so we can cancel it if the
   // player restarts/pauses mid-count or the component unmounts.
@@ -147,6 +187,13 @@ export function useRhythmGame(
   const activeHoldsRef = useRef<Set<string>>(new Set());
   const feedbackRef = useRef<HitFeedback[]>([]);
   const laneFlashRef = useRef<Record<Lane, number>>(emptyLaneFlash());
+  const starPowerRef = useRef<StarPowerState>(createStarPower());
+  const rockMeterRef = useRef<number>(createRockMeter());
+  // Star-phrase progress (phrase id → hit/broken counts), advanced as notes
+  // resolve so a completed phrase can bank meter the instant its last note hits.
+  const phraseIndexRef = useRef<Map<number, StarPhraseProgress>>(
+    buildPhraseIndex(chart.notes),
+  );
 
   // Mirror values that tap/update read at high frequency to avoid stale closures.
   const phaseRef = useRef<GamePhase>("idle");
@@ -178,8 +225,13 @@ export function useRhythmGame(
     activeHoldsRef.current.clear();
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
+    phraseIndexRef.current = buildPhraseIndex(chart.notes);
     durationRef.current = chartDurationMs(chart);
     setScore(createInitialScore(chart.notes.length));
+    starPowerRef.current = createStarPower();
+    setStarPower(starPowerRef.current);
+    rockMeterRef.current = createRockMeter();
+    setRockMeter(rockMeterRef.current);
     setCountdown(0);
     setPhase("idle");
   }, [chart, clearCountdownTimer]);
@@ -189,6 +241,18 @@ export function useRhythmGame(
 
   const getCalibrationOffsetMs = useCallback(() => calibrationRef.current, []);
 
+  // Write-through setters: keep the authoritative ref and the low-frequency
+  // React mirror in lockstep with a single call site.
+  const commitStarPower = useCallback((next: StarPowerState) => {
+    starPowerRef.current = next;
+    setStarPower(next);
+  }, []);
+
+  const commitRockMeter = useCallback((next: number) => {
+    rockMeterRef.current = next;
+    setRockMeter(next);
+  }, []);
+
   const pushFeedback = useCallback(
     (
       lane: Lane,
@@ -196,6 +260,7 @@ export function useRhythmGame(
       atMs: number,
       errorMs: number,
       hold?: HitFeedback["hold"],
+      star?: boolean,
     ) => {
       const list = feedbackRef.current;
       // Prune expired entries opportunistically so the array stays small.
@@ -209,6 +274,7 @@ export function useRhythmGame(
         createdAtMs: atMs,
         errorMs,
         hold,
+        star,
       });
       feedbackRef.current = pruned;
     },
@@ -223,8 +289,11 @@ export function useRhythmGame(
     activeHoldsRef.current.clear();
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
+    phraseIndexRef.current = buildPhraseIndex(chart.notes);
     setScore(createInitialScore(chart.notes.length));
-  }, [chart]);
+    commitStarPower(createStarPower());
+    commitRockMeter(createRockMeter());
+  }, [chart, commitStarPower, commitRockMeter]);
 
   // Run a short "3, 2, 1" countdown, then start the song from the top. This
   // gives the player a beat to get ready so the opening notes aren't missed the
@@ -279,7 +348,7 @@ export function useRhythmGame(
       audio.stop();
       setCountdown(0);
       setPhase("idle");
-    } else if (current === "idle" || current === "finished") {
+    } else if (current === "idle" || current === "finished" || current === "failed") {
       // Treat as a fresh start (with the same countdown).
       beginCountdown();
     }
@@ -335,13 +404,23 @@ export function useRhythmGame(
           holdStartMs: result.startsHold ? t : undefined,
         });
         if (result.startsHold) activeHoldsRef.current.add(result.note.id);
-        setScore((s) => applyHit(s, result.rating));
+        const spMult = starPowerScoreMultiplier(starPowerRef.current);
+        setScore((s) => applyHit(s, result.rating, spMult));
+        commitRockMeter(rockMeterOnHit(rockMeterRef.current, result.rating));
         pushFeedback(lane, result.rating, t, result.errorMs);
+        // Star phrase bookkeeping: completing one banks a quarter bar of meter
+        // (extending the run if star power is already blazing).
+        if (result.note.starPhrase !== undefined) {
+          if (registerStarNoteHit(phraseIndexRef.current, result.note.starPhrase)) {
+            commitStarPower(awardStarPhrase(starPowerRef.current, t));
+            pushFeedback(lane, result.rating, t, 0, undefined, true);
+          }
+        }
       }
       // Stray taps (no note in window) are intentionally forgiving on a
       // touchscreen: they flash the lane but do not break combo.
     },
-    [audio, chart.offsetMs, pushFeedback, activeHoldNotes],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, commitRockMeter, commitStarPower],
   );
 
   const releaseLane = useCallback(
@@ -368,7 +447,8 @@ export function useRhythmGame(
           holdEndMs: t,
         });
         activeHoldsRef.current.delete(result.note.id);
-        setScore((s) => applyHoldComplete(s, result.note.durationMs ?? 0));
+        const spMult = starPowerScoreMultiplier(starPowerRef.current);
+        setScore((s) => applyHoldComplete(s, result.note.durationMs ?? 0, spMult));
         pushFeedback(lane, "perfect", t, 0, "completed");
       } else if (result.kind === "dropped") {
         const prev = runtimeRef.current.get(result.note.id);
@@ -379,16 +459,24 @@ export function useRhythmGame(
         });
         activeHoldsRef.current.delete(result.note.id);
         setScore((s) => applyHoldDrop(s));
+        commitRockMeter(
+          rockMeterOnDrop(rockMeterRef.current, starPowerRef.current.active),
+        );
+        playMissBuzz();
         pushFeedback(lane, "miss", t, 0, "dropped");
       }
       // No sustain in this lane → releasing is a harmless no-op.
     },
-    [audio, chart.offsetMs, pushFeedback, activeHoldNotes],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, commitRockMeter],
   );
 
   const update = useCallback(
     (songTimeMs: number) => {
       if (phaseRef.current !== "playing") return;
+
+      // Settle an active star-power run: once fully drained, switch it off.
+      const ticked = tickStarPower(starPowerRef.current, songTimeMs);
+      if (ticked !== starPowerRef.current) commitStarPower(ticked);
 
       // Miss detection walks a monotonic cursor from where it left off, so notes
       // already resolved earlier in the song are never re-scanned.
@@ -403,6 +491,8 @@ export function useRhythmGame(
       missCursorRef.current = nextIndex;
 
       if (missedIds.length > 0) {
+        let meter = rockMeterRef.current;
+        const spActive = starPowerRef.current.active;
         for (const id of missedIds) {
           const note = notesByIdRef.current.get(id);
           runtimeRef.current.set(id, {
@@ -410,13 +500,27 @@ export function useRhythmGame(
             rating: "miss",
             judgedAtMs: songTimeMs,
           });
+          meter = rockMeterOnMiss(meter, spActive);
           if (note) {
             pushFeedback(note.lane, "miss", songTimeMs, 0);
+            // A missed star note kills its whole phrase's award.
+            if (note.starPhrase !== undefined) {
+              registerStarNoteMiss(phraseIndexRef.current, note.starPhrase);
+            }
           }
         }
         setScore((s) =>
           missedIds.reduce((acc) => applyMiss(acc), s),
         );
+        commitRockMeter(meter);
+        playMissBuzz();
+
+        // The crowd has had enough — booed off the stage, run over.
+        if (isRockMeterFailed(meter)) {
+          setPhase("failed");
+          audio.stop();
+          return;
+        }
       }
 
       // Auto-complete sustains the player kept pressed through the tail's end,
@@ -446,7 +550,8 @@ export function useRhythmGame(
             pushFeedback(note.lane, "perfect", songTimeMs, 0, "completed");
           }
         }
-        setScore((s) => applyHoldComplete(s, bonusDurations));
+        const spMult = starPowerScoreMultiplier(starPowerRef.current);
+        setScore((s) => applyHoldComplete(s, bonusDurations, spMult));
       }
 
       // End the run once the song is over (covers trailing silence too).
@@ -455,7 +560,7 @@ export function useRhythmGame(
         audio.stop();
       }
     },
-    [audio, chart.offsetMs, pushFeedback, activeHoldNotes],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, commitRockMeter, commitStarPower],
   );
 
   // Finish as soon as every note has been judged — but not while a hold's tail
@@ -473,6 +578,14 @@ export function useRhythmGame(
     audio.stop();
   }, [phase, score, audio]);
 
+  // Unleash banked star power. Guarded by the pure canActivate check inside
+  // spActivate (returns the same state when not allowed → no write, no render).
+  const activateStarPower = useCallback(() => {
+    if (phaseRef.current !== "playing") return;
+    const next = spActivate(starPowerRef.current, audio.getTimeMs());
+    if (next !== starPowerRef.current) commitStarPower(next);
+  }, [audio, commitStarPower]);
+
   const adjustCalibration = useCallback((deltaMs: number) => {
     setCalibrationOffsetMs((prev) => prev + deltaMs);
   }, []);
@@ -488,10 +601,14 @@ export function useRhythmGame(
       score,
       countdown,
       calibrationOffsetMs,
+      starPower,
+      rockMeter,
       runtimeRef,
       feedbackRef,
       laneFlashRef,
+      starPowerRef,
       getCalibrationOffsetMs,
+      activateStarPower,
       start,
       togglePause,
       restart,
@@ -507,7 +624,10 @@ export function useRhythmGame(
       score,
       countdown,
       calibrationOffsetMs,
+      starPower,
+      rockMeter,
       getCalibrationOffsetMs,
+      activateStarPower,
       start,
       togglePause,
       restart,

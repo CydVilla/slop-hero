@@ -31,16 +31,29 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
   everyone (notes + optional YouTube link only, never audio files). Backed by
   the same Postgres database as the metrics.
 - ⏱️ Web Audio API as the timing source (precise, monotonic clock).
+- 🛣️ **3D perspective highway** — a Guitar Hero-style fretboard receding to a
+  horizon: lanes converge on a vanishing point and notes pop over the horizon
+  small and slow, then swell and accelerate into the hit line.
 - 🎯 Five lanes (green/red/yellow/blue/orange), large touch targets.
 - 🎸 **Hold notes (sustains)** — Guitar Hero / Rock Band style: tap the head, then
   keep the lane pressed through the tail for a length-scaled bonus. Releasing
   early drops the sustain and breaks your combo. Works with multi-touch, so you
   can hold one lane while tapping others.
-- 🟢 Hit windows: Perfect ±35ms, Great ±70ms, Good ±110ms.
+- ⭐ **Star power** — hit every note of a ★ phrase to bank a quarter of the
+  meter; at half a bar, tap the meter (or press Enter) to double all scoring
+  while it drains, up to ×8 with the combo multiplier. Clone Hero imports keep
+  their authored `S 2` phrases; every other chart gets phrases auto-marked.
+- ❤️ **Rock meter** — hits push the crowd gauge up, misses drag it down twice
+  as hard; let it hit empty and you're booed off the stage (song fail).
+- 🌟 **Star rating** (0–5), live during play and on the results screen, based
+  on the average multiplier you sustain across the song.
+- 🔇 Missing a note plays a synthesized fret-buzz sting, GH style.
+- 🟢 Hit windows: Perfect ±50ms, Great ±95ms, Good ±140ms (touch-tuned).
 - 🔢 Score, combo, max combo, accuracy, and per-rating counts with combo
   multipliers (×1 / ×2 / ×3 / ×4).
 - 🎚️ Calibration offset control for audio/input sync (−10 / +10 / reset).
-- 🖱️⌨️📱 Mouse, touch (Pointer Events), and keyboard (A/S/D/F/G + Space).
+- 🖱️⌨️📱 Mouse, touch (Pointer Events), and keyboard (A/S/D/F/G, Space,
+  Enter/Shift for star power).
 - 📊 **Metrics dashboard** (`/dashboard`) — anonymous, gameplay-only telemetry
   (accuracy, miss rates, calibration, per-track stats) with an "all players" vs
   "this device" view and privacy controls (opt-out / clear).

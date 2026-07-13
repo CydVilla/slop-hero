@@ -11,6 +11,28 @@ behind these changes live in [`docs/adr/`](./docs/adr/).
 
 ### Added
 
+- **Star power** — Guitar Hero's signature mechanic. Charts now carry star
+  phrases (Clone Hero `.chart` imports keep their authored `S 2` phrases;
+  every other source gets deterministic auto-marked ones). Hitting every note
+  of a phrase banks a quarter of the meter; with at least half a bar stored,
+  tap the on-highway meter (or press Enter/Shift) to double all scoring while
+  it drains — up to ×8 stacked with the combo multiplier. Activating floods
+  the highway electric blue, and completing phrases mid-run extends it.
+- **Rock meter with song fail** — the classic crowd gauge. Hits nudge it up,
+  misses drag it down about twice as hard (star power halves the sting), and
+  an empty gauge boos you off the stage: the song stops, a fail screen offers
+  a retry, and the run is recorded as not completed.
+- **3D perspective highway** — the note highway is now a GH-style fretboard
+  receding to a horizon: lanes converge on a vanishing point, notes pop over
+  the horizon small and slow then swell and accelerate into the hit line, with
+  glowing side rails and perspective-mapped beat bars. Touch input uses the
+  exact inverse mapping, so what you see is what you tap.
+- **Star rating (0–5)** — live in the score panel and on the results screen,
+  derived from the average multiplier sustained across the song (score ÷ base
+  chart score), GH style.
+- **Miss fret-buzz** — missing a note (or dropping a sustain) plays a short
+  synthesized muted-string flub, so misses sting audibly in every playback
+  mode (uploaded audio, YouTube, silent).
 - **Persistent song library** — songs you upload, import from Clone Hero, or
   pick from YouTube search are now saved on your device (IndexedDB, audio
   included) and restored into the catalog on every visit. No more re-uploading

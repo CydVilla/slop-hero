@@ -9,9 +9,12 @@
  * The 5 colored frets (0–4) map directly onto our 5 lanes. Sustains import as
  * playable holds — their `durationMs` is preserved and long-enough sustains are
  * tagged `type: "hold"` so the player must keep the lane pressed through the
- * tail. Open notes (.chart fret 7) map to a center lane, and modifier flags
- * (forced/HOPO/tap/star power) are dropped. Chords are capped at 2 simultaneous
- * notes to stay finger-playable.
+ * tail. Open notes (.chart fret 7) map to a center lane. Star-power phrases
+ * (`S 2` special events) import as authored star phrases on the notes they
+ * cover; other modifier flags (forced/HOPO/tap) are dropped. MIDI star power
+ * is not read (our minimal SMF reader has no note-off tracking), so MIDI
+ * imports fall back to auto-marked phrases like every other source. Chords are
+ * capped at 2 simultaneous notes to stay finger-playable.
  *
  * Pure & dependency-free (no DOM); ZIP intake / audio object URLs live in
  * `src/lib/cloneHeroClient.ts`. See docs/cloneHeroImportPlan.md.
@@ -149,6 +152,29 @@ interface RawNote {
   tick: number;
   lane: Lane;
   lengthTicks: number;
+  /** Index of the authored star-power phrase covering this note, if any. */
+  starPhrase?: number;
+}
+
+/** An authored star-power phrase: covers ticks [tick, tick + lengthTicks). */
+interface StarPhraseRange {
+  tick: number;
+  lengthTicks: number;
+}
+
+/**
+ * Index of the star phrase whose tick range covers `tick`, or undefined.
+ * Phrase counts are tiny (a handful per song), so a linear scan is fine.
+ */
+function starPhraseAt(
+  phrases: readonly StarPhraseRange[],
+  tick: number,
+): number | undefined {
+  for (let i = 0; i < phrases.length; i += 1) {
+    const p = phrases[i]!;
+    if (tick >= p.tick && tick < p.tick + p.lengthTicks) return i;
+  }
+  return undefined;
 }
 
 /**
@@ -175,6 +201,7 @@ function assembleChart(
       type: isHold ? "hold" : "tap",
     };
     if (lengthMs > 0) note.durationMs = lengthMs;
+    if (n.starPhrase !== undefined) note.starPhrase = n.starPhrase;
     return note;
   });
 
@@ -318,6 +345,16 @@ export function parseNotesChart(
     throw new Error(`This chart has no ${difficulty} guitar track.`);
   }
 
+  // Authored star-power phrases: `tick = S 2 length` special events.
+  const starPhrases: StarPhraseRange[] = [];
+  for (const line of sectionLines) {
+    const m = line.match(/^\s*(\d+)\s*=\s*S\s+2\s+(\d+)/);
+    if (!m) continue;
+    const lengthTicks = Number(m[2]);
+    if (lengthTicks > 0) starPhrases.push({ tick: Number(m[1]), lengthTicks });
+  }
+  starPhrases.sort((a, b) => a.tick - b.tick);
+
   const raw: RawNote[] = [];
   for (const line of sectionLines) {
     // `tick = N fret length`
@@ -331,7 +368,12 @@ export function parseNotesChart(
     else if (fret === 7) lane = 2; // open note → center lane
     // fret 5 (forced) / 6 (tap) are modifiers, not notes → skip.
     if (lane === null) continue;
-    raw.push({ tick, lane: lane as Lane, lengthTicks: length });
+    raw.push({
+      tick,
+      lane: lane as Lane,
+      lengthTicks: length,
+      starPhrase: starPhraseAt(starPhrases, tick),
+    });
   }
 
   return assembleChart(raw, tickToMs, meta, difficulty);

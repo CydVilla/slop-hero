@@ -73,6 +73,50 @@ export const COMBO_MULTIPLIERS: ReadonlyArray<readonly [number, number]> = [
 ] as const;
 
 /**
+ * Star power (Guitar Hero's signature mechanic, "Overdrive" in Rock Band).
+ * Hitting every note of a star phrase banks meter; once at least half a bar is
+ * stored the player can unleash it for a temporary score-multiplier boost.
+ */
+export const STAR_POWER = {
+  /** Meter fraction gained for completing one star phrase (GH: a quarter bar). */
+  phraseGain: 0.25,
+  /** Minimum stored meter required to activate (GH: half a bar). */
+  activationMin: 0.5,
+  /** How long a completely full bar lasts once activated, in ms. */
+  fullBarDrainMs: 12_000,
+  /** Extra score multiplier while active — stacks with the combo multiplier. */
+  scoreMultiplier: 2,
+} as const;
+
+/**
+ * Rock meter (the green/yellow/red crowd gauge). Hits nudge it up, misses drag
+ * it down harder — let it hit empty and the crowd boos you off stage (song
+ * fail). Values are fractions of the full gauge.
+ */
+export const ROCK_METER = {
+  start: 0.5,
+  /** Gain per successful hit, by judgement quality. */
+  gain: { perfect: 0.02, great: 0.015, good: 0.008 },
+  /** Loss per missed note. Misses hurt ~2× more than a perfect helps. */
+  missLoss: 0.04,
+  /** Loss for dropping a sustain early (gentler than a full miss). */
+  dropLoss: 0.02,
+  /** Meter level at/below which the run fails. */
+  failAt: 0,
+  /** Zone boundaries for the gauge colour (red below, green above). */
+  redBelow: 0.25,
+  greenAbove: 0.6,
+} as const;
+
+/**
+ * Star-rating thresholds, GH-style: the run's score divided by the chart's
+ * base (multiplier-less) score — i.e. the average multiplier sustained across
+ * the song. Index i = minimum ratio for (i+1) stars. 5 stars ≈ a near-full
+ * combo; the theoretical ceiling with star power is 8×.
+ */
+export const STAR_RATING_THRESHOLDS = [0.4, 1.0, 1.8, 2.6, 3.4] as const;
+
+/**
  * How long notes take to travel from spawn (top of highway) to the hit line.
  * Lower = faster scroll = harder to read. This is the single source of truth
  * for converting note time into screen position.
@@ -110,6 +154,9 @@ export const LANE_GLOW_COLORS: Record<Lane, string> = {
   3: "#60a5fa",
   4: "#fb923c",
 };
+
+/** Electric blue used for star notes and the star-power-active highway. */
+export const STAR_POWER_COLOR = "#38bdf8";
 
 /** Keyboard bindings for desktop testing (A/S/D/F/G -> lanes 0..4). */
 export const KEYBOARD_LANE_MAP: Record<string, Lane> = {

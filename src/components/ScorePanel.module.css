@@ -47,6 +47,63 @@
   font-weight: 800;
 }
 
+/* Multiplier while star power blazes — electric blue, like the highway. */
+.multStar {
+  color: #38bdf8;
+  font-style: normal;
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+}
+
+/* Live 0–5 star rating ---------------------------------------------------- */
+
+.starRow {
+  display: flex;
+  gap: 3px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.starOn {
+  color: #fde047;
+  text-shadow: 0 0 6px rgba(253, 224, 71, 0.6);
+}
+
+.starOff {
+  color: rgba(255, 255, 255, 0.18);
+}
+
+/* Rock meter (crowd gauge) ------------------------------------------------- */
+
+.rockMeter {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.rockFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 160ms ease-out, background-color 160ms ease-out;
+}
+
+.rock_green {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.rock_yellow {
+  background: #eab308;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.6);
+}
+
+.rock_red {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
