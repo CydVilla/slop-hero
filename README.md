@@ -25,9 +25,10 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
   saved on your device (IndexedDB, audio included) and restored into the
   catalog on every visit. No re-uploading, no re-searching.
 - ✏️ **Chart editor** (`/editor`) — start from the current song, a saved song,
-  or a blank grid; tap beat-snapped cells to place notes and paint ★
-  star-power phrases with the star brush; test-play, save to your device, or
-  publish (authored phrases ship with the chart).
+  or a blank grid; tap beat-snapped cells to place notes, author ▮ sustains
+  (tap a note, then tap where its tail ends), and paint ★ star-power phrases;
+  test-play, save to your device, or publish (authored phrases ship with the
+  chart).
 - 🌐 **Community charts** — publish your chart to the shared catalog for
   everyone (notes + optional YouTube link only, never audio files). Backed by
   the same Postgres database as the metrics.
@@ -50,6 +51,12 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
   previous note was hit. `.chart` imports keep authored forced/tap flags.
 - 🎚️ **Whammy** — wiggle the finger holding a ★ sustain (desktop: key
   auto-repeat) to squeeze bonus star-power meter out of the tail.
+- 🎯 **Practice mode** — loop any 8-bar section at 0.5× / 0.75× / full speed
+  with a lead-in; the crowd can't boo you off while you rehearse, and
+  practice loops never touch your stats or leaderboards.
+- 🏆 **Local leaderboards** — a top-5 board per chart + difficulty on your
+  device: best score on the ready screen, a NEW BEST banner and the board on
+  the results screen. Completed runs only.
 - ❤️ **Rock meter** — hits push the crowd gauge up, misses drag it down twice
   as hard; let it hit empty and you're booed off the stage (song fail).
 - 🌟 **Star rating** (0–5), live during play and on the results screen, based
@@ -202,8 +209,12 @@ secrets.
    multiplier that's up to ×8. Completing another phrase while it's blazing
    extends the run, and misses hurt the rock meter only half as much.
 8. Chase the **stars** — the 0–5 rating next to your score grades the run by
-   the average multiplier you sustain; 5★ takes a near-full combo.
-9. If notes feel early/late, nudge the **Calibration** offset.
+   the average multiplier you sustain; 5★ takes a near-full combo — and your
+   **best runs** are kept on the device (top 5 per chart and difficulty).
+9. **Stuck on a section?** Hit **Practice** on the ready screen: pick the
+   8-bar section that keeps killing you, slow it to 0.5× or 0.75×, and loop
+   it judgement-free until it sticks.
+10. If notes feel early/late, nudge the **Calibration** offset.
 
 ## How upload & auto-charting works
 
@@ -287,6 +298,7 @@ src/
     starPower.ts       # star phrases (authored + auto-marked), meter machine, whammy
     hopo.ts            # hammer-ons: natural marking + held-lane auto-hit finder
     rockMeter.ts       # crowd gauge: gains/losses, zones, song-fail check
+    practice.ts        # rehearsal sections, loop runtime, lead-in/wrap timing
     chartUtils.ts      # ids, sorting, validation, runtime-state construction
     demoChart.ts       # built-in demo chart
     autoMapper.ts      # deterministic BPM-grid automapper (+ fallback)
@@ -304,6 +316,7 @@ src/
     analyzeClient.ts   # decode + drive the analysis worker (main thread)
     cloneHeroClient.ts # unzip + inspect/import Clone Hero songs in-browser
     songLibrary.ts     # IndexedDB persistence for the user's songs
+    localScores.ts     # device-local top-5 leaderboard per chart
     community/         # community catalog client + server-side chart sanitizer
     sfx.ts             # synthesized sound effects (miss fret-buzz)
     metrics/           # analytics: types, aggregate, insights, store (Postgres/JSONL), client

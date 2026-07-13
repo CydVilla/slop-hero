@@ -20,6 +20,7 @@ the reasoning available long after the PR discussion is forgotten.
 |---|-------|--------|
 | [0001](./0001-local-song-library-indexeddb.md) | Persist user songs locally in IndexedDB | Accepted |
 | [0002](./0002-community-catalog-charts-only.md) | Community catalog shares charts, never audio | Accepted |
-| [0003](./0003-chart-editor-v1-scope.md) | Chart editor v1: beat-grid taps, no timeline audio | Accepted |
+| [0003](./0003-chart-editor-v1-scope.md) | Chart editor v1: beat-grid taps, no timeline audio | Accepted (hold limit lifted by 0006) |
 | [0004](./0004-guitar-feel-gameplay.md) | Guitar-feel gameplay: star power, rock meter, perspective highway | Accepted (amended by 0005) |
 | [0005](./0005-hopo-whammy-star-authoring.md) | HOPOs, whammy, and star-phrase authoring | Accepted |
+| [0006](./0006-practice-leaderboards-hold-authoring.md) | Practice mode, local leaderboards, hold authoring | Accepted |

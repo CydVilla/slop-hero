@@ -270,6 +270,140 @@
   line-height: 1;
 }
 
+/* Best-score line on the ready screen. */
+.bestLine {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.bestLine strong {
+  color: #fde047;
+  font-variant-numeric: tabular-nums;
+}
+
+/* New-record banner on the results card. */
+.newBest {
+  margin: 0;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  color: #fde047;
+  text-shadow: 0 0 14px rgba(253, 224, 71, 0.6);
+  animation: newBestPulse 1.2s ease-in-out infinite;
+}
+
+.newBest em {
+  display: block;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-shadow: none;
+}
+
+@keyframes newBestPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .newBest {
+    animation: none;
+  }
+}
+
+/* Local top-5 board on the results card. */
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.boardTitle {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.boardList {
+  margin: 0;
+  padding: 0 0 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 14px;
+}
+
+.boardList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.boardList em {
+  font-style: normal;
+  color: #fde047;
+  font-size: 12px;
+}
+
+.boardRowMine {
+  color: #7dd3fc;
+  font-weight: 800;
+}
+
+/* Practice picker ---------------------------------------------------------- */
+
+.practiceSections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.practiceSpeeds {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.practiceChip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.practiceChip em {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.practiceChipActive {
+  border-color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.16);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
 .starEarned {
   color: #fde047;
   text-shadow: 0 0 14px rgba(253, 224, 71, 0.7);

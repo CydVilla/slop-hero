@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { LANE_COLORS, LANE_COUNT } from "@/game/constants";
+import { LANE_COLORS, LANE_COUNT, MIN_HOLD_MS } from "@/game/constants";
 import {
   beatsToMs,
   chartDurationMs,
@@ -39,13 +39,16 @@ import styles from "./editor.module.css";
  * or publish it to the shared community catalog (notes + optional YouTube id
  * only — audio never leaves the device; see docs/adr/0002).
  *
- * Deliberate v1 limits (docs/adr/0003): tap notes only (existing holds render
- * and can be deleted, not authored), no waveform, no undo stack — the grid
+ * Deliberate v1 limits (docs/adr/0003): no waveform, no undo stack — the grid
  * itself is the undo (tap again to remove).
  *
  * The ★ brush paints star-power phrase membership onto existing notes
  * (docs/adr/0005): touching starred notes group into one phrase at build time,
  * so authored charts control exactly which runs bank star power.
+ *
+ * The ▮ brush authors sustains (docs/adr/0006): tap a note to anchor, then tap
+ * a later cell in the same lane to set where the tail ends; tapping the anchor
+ * again reverts it to a plain tap. Tail cells render along the span.
  */
 
 const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard", "expert"];
@@ -146,8 +149,17 @@ export default function EditorPage(): React.JSX.Element {
   const [snap, setSnap] = useState<number>(0.5);
   const [page, setPage] = useState(0);
   // "note" places/removes notes; "star" paints star-power phrase membership
-  // onto existing notes (contiguous starred runs become phrases on build).
-  const [brush, setBrush] = useState<"note" | "star">("note");
+  // onto existing notes (contiguous starred runs become phrases on build);
+  // "hold" authors sustains: tap a note, then tap where its tail should end.
+  const [brush, setBrush] = useState<"note" | "star" | "hold">("note");
+  // The note awaiting its sustain-end tap in hold mode (highlighted in the
+  // grid). A ref twin lets the setLoaded updater read/write it synchronously.
+  const [holdAnchor, setHoldAnchor] = useState<string | null>(null);
+  const holdAnchorRef = useRef<string | null>(null);
+  const updateHoldAnchor = useCallback((id: string | null) => {
+    holdAnchorRef.current = id;
+    setHoldAnchor(id);
+  }, []);
 
   const [contributor, setContributor] = useState("");
   const [communityConfigured, setCommunityConfigured] = useState(false);
@@ -184,7 +196,8 @@ export default function EditorPage(): React.JSX.Element {
     setPublishState("idle");
     setPublishError(null);
     setPage(0);
-  }, []);
+    updateHoldAnchor(null);
+  }, [updateHoldAnchor]);
 
   const loadActive = useCallback(() => {
     const active = fromActiveSong();
@@ -251,40 +264,107 @@ export default function EditorPage(): React.JSX.Element {
     return map;
   }, [loaded, snap]);
 
+  /** Grid slots covered by a sustain's tail (start exclusive, end inclusive). */
+  const tails = useMemo(() => {
+    const set = new Set<string>();
+    if (!loaded) return set;
+    for (const note of loaded.notes) {
+      if (!note.durationMs || note.durationMs <= 0) continue;
+      const startSlot = Math.round(msToBeats(note.timeMs, loaded.bpm) / snap);
+      const endSlot = Math.round(
+        msToBeats(note.timeMs + note.durationMs, loaded.bpm) / snap,
+      );
+      for (let s = startSlot + 1; s <= endSlot; s += 1) {
+        set.add(`${s}:${note.lane}`);
+      }
+    }
+    return set;
+  }, [loaded, snap]);
+
+  // Computed OUTSIDE setState updaters: React StrictMode double-invokes
+  // updaters, so any side effect inside one (like moving the hold anchor)
+  // would run twice and cancel itself out.
   const toggleCell = useCallback(
     (beat: number, lane: Lane) => {
-      setLoaded((prev) => {
-        if (!prev) return prev;
-        const slot = Math.round(beat / snap);
-        const existing = prev.notes.filter((n) => {
-          const s = Math.round(msToBeats(n.timeMs, prev.bpm) / snap);
-          return s === slot && n.lane === lane;
-        });
+      const prev = loaded;
+      if (!prev) return;
+      const slot = Math.round(beat / snap);
+      const existing = prev.notes.filter((n) => {
+        const s = Math.round(msToBeats(n.timeMs, prev.bpm) / snap);
+        return s === slot && n.lane === lane;
+      });
 
+      let next = prev;
+
+      if (brush === "hold") {
+        // Hold brush: first tap picks a note (the sustain head), second tap in
+        // the SAME lane at a LATER beat sets where the tail ends. Tapping the
+        // head again clears the sustain; tapping another note re-anchors.
+        const anchorId = holdAnchorRef.current;
+        const anchor = anchorId
+          ? prev.notes.find((n) => n.id === anchorId)
+          : undefined;
+
+        if (!anchor) {
+          // No (surviving) anchor: pick the tapped note, if any.
+          updateHoldAnchor(existing[0]?.id ?? null);
+          return;
+        }
+
+        const anchorSlot = Math.round(msToBeats(anchor.timeMs, prev.bpm) / snap);
+        if (existing.some((n) => n.id === anchor.id)) {
+          // Tapped the head again → back to a plain tap.
+          updateHoldAnchor(null);
+          next = {
+            ...prev,
+            notes: prev.notes.map((n) =>
+              n.id === anchor.id
+                ? { ...n, durationMs: undefined, type: "tap" as const }
+                : n,
+            ),
+          };
+        } else if (lane === anchor.lane && slot > anchorSlot) {
+          // Later cell in the head's lane → that's the tail end.
+          updateHoldAnchor(null);
+          const durationMs = Math.round(beatsToMs(beat, prev.bpm) - anchor.timeMs);
+          const holdType: ChartNote["type"] =
+            durationMs >= MIN_HOLD_MS ? "hold" : "tap";
+          next = {
+            ...prev,
+            notes: prev.notes.map((n) =>
+              n.id === anchor.id ? { ...n, durationMs, type: holdType } : n,
+            ),
+          };
+        } else {
+          // Anywhere else: re-anchor if it's a note, otherwise keep waiting.
+          if (existing.length > 0) updateHoldAnchor(existing[0]!.id);
+          return;
+        }
+      } else if (brush === "star") {
         // Star brush: toggle phrase membership on the notes already there.
         // Phrase ids are renumbered from contiguity at build time, so while
         // editing "starred" is just a flag (starPhrase 0).
-        if (brush === "star") {
-          if (existing.length === 0) return prev;
-          const ids = new Set(existing.map((n) => n.id));
-          const anyStarred = existing.some((n) => n.starPhrase !== undefined);
-          const notes = prev.notes.map((n) => {
+        if (existing.length === 0) return;
+        const ids = new Set(existing.map((n) => n.id));
+        const anyStarred = existing.some((n) => n.starPhrase !== undefined);
+        next = {
+          ...prev,
+          notes: prev.notes.map((n) => {
             if (!ids.has(n.id)) return n;
             if (anyStarred) {
               const { starPhrase: _cleared, ...rest } = n;
               return rest;
             }
             return { ...n, starPhrase: 0 };
-          });
-          return { ...prev, notes };
-        }
-
-        let notes: ChartNote[];
-        if (existing.length > 0) {
-          const ids = new Set(existing.map((n) => n.id));
-          notes = prev.notes.filter((n) => !ids.has(n.id));
-        } else {
-          notes = sortNotes([
+          }),
+        };
+      } else if (existing.length > 0) {
+        const ids = new Set(existing.map((n) => n.id));
+        next = { ...prev, notes: prev.notes.filter((n) => !ids.has(n.id)) };
+      } else {
+        next = {
+          ...prev,
+          notes: sortNotes([
             ...prev.notes,
             {
               id: makeNoteId("ed"),
@@ -292,14 +372,24 @@ export default function EditorPage(): React.JSX.Element {
               lane,
               type: "tap",
             },
-          ]);
-        }
-        return { ...prev, notes };
-      });
+          ]),
+        };
+      }
+
+      setLoaded(next);
       setSaveState("idle");
       setPublishState("idle");
     },
-    [snap, brush],
+    [loaded, snap, brush, updateHoldAnchor],
+  );
+
+  // Leaving hold mode (or switching charts) abandons any pending anchor.
+  const pickBrush = useCallback(
+    (next: "note" | "star" | "hold") => {
+      setBrush(next);
+      updateHoldAnchor(null);
+    },
+    [updateHoldAnchor],
   );
 
   const extend = useCallback(() => {
@@ -594,14 +684,21 @@ export default function EditorPage(): React.JSX.Element {
                 <button
                   type="button"
                   className={`${styles.chip} ${brush === "note" ? styles.chipActive : ""}`}
-                  onClick={() => setBrush("note")}
+                  onClick={() => pickBrush("note")}
                 >
                   ● Notes
                 </button>
                 <button
                   type="button"
+                  className={`${styles.chip} ${brush === "hold" ? styles.chipActive : ""}`}
+                  onClick={() => pickBrush("hold")}
+                >
+                  ▮ Holds
+                </button>
+                <button
+                  type="button"
                   className={`${styles.chip} ${brush === "star" ? styles.chipActive : ""}`}
-                  onClick={() => setBrush("star")}
+                  onClick={() => pickBrush("star")}
                 >
                   ★ Star phrases
                 </button>
@@ -649,9 +746,14 @@ export default function EditorPage(): React.JSX.Element {
             </div>
 
             <p className={styles.hint}>
-              {brush === "note"
-                ? "Tap a cell to place a note; tap again to remove it. Downbeats are brighter. Changing BPM moves the grid, not the notes you already placed."
-                : "Tap existing notes to star them (tap again to unstar). Touching starred notes form one star phrase — hit every note of a phrase in-game to bank star power. Leave gaps between phrases."}
+              {brush === "note" &&
+                "Tap a cell to place a note; tap again to remove it. Downbeats are brighter. Changing BPM moves the grid, not the notes you already placed."}
+              {brush === "hold" &&
+                (holdAnchor
+                  ? "Now tap a LATER cell in the same lane to set where the sustain ends — or tap the note again to make it a plain tap."
+                  : "Tap a note to start authoring its sustain, then tap where the tail should end.")}
+              {brush === "star" &&
+                "Tap existing notes to star them (tap again to unstar). Touching starred notes form one star phrase — hit every note of a phrase in-game to bank star power. Leave gaps between phrases."}
             </p>
 
             <div className={styles.gridScroll}>
@@ -694,20 +796,24 @@ export default function EditorPage(): React.JSX.Element {
                       const isStar = cellNotes.some(
                         (n) => n.starPhrase !== undefined,
                       );
+                      const isTail = !hasNote && tails.has(`${slot}:${lane}`);
+                      const isAnchor =
+                        holdAnchor !== null &&
+                        cellNotes.some((n) => n.id === holdAnchor);
                       return (
                         <button
                           key={lane}
                           type="button"
-                          className={`${styles.cell} ${hasNote ? styles.cellOn : ""} ${isStar ? styles.cellStar : ""}`}
+                          className={`${styles.cell} ${hasNote ? styles.cellOn : ""} ${isStar ? styles.cellStar : ""} ${isTail ? styles.cellTail : ""} ${isAnchor ? styles.cellAnchor : ""}`}
                           style={
-                            hasNote
+                            hasNote || isTail
                               ? ({ "--lane": LANE_COLORS[lane] } as React.CSSProperties)
                               : undefined
                           }
-                          aria-label={`Beat ${beat}, lane ${lane + 1}${hasNote ? " — has note" : ""}${isStar ? " (star phrase)" : ""}`}
+                          aria-label={`Beat ${beat}, lane ${lane + 1}${hasNote ? " — has note" : ""}${isHold ? " (hold)" : ""}${isStar ? " (star phrase)" : ""}${isTail ? " — sustain tail" : ""}`}
                           onClick={() => toggleCell(beat, lane)}
                         >
-                          {hasNote ? (isStar ? "★" : isHold ? "▮" : "●") : ""}
+                          {hasNote ? (isStar ? "★" : isHold ? "▮" : "●") : isTail ? "│" : ""}
                         </button>
                       );
                     })}

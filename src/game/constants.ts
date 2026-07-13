@@ -118,6 +118,23 @@ export const WHAMMY = {
 } as const;
 
 /**
+ * Practice mode: loop one section of the song, crowd can't boo you off, and
+ * playback can be slowed while you learn the fingering.
+ */
+export const PRACTICE = {
+  /** Bars per section when the chart knows its tempo. */
+  barsPerSection: 8,
+  /** Section length (ms) when the tempo is unknown. */
+  fallbackSectionMs: 15_000,
+  /** Silence played before the section's first note on every loop. */
+  leadInMs: 2_000,
+  /** Played past the section end before looping (lets the last note resolve). */
+  loopTailMs: 600,
+  /** Selectable playback speeds. */
+  speeds: [0.5, 0.75, 1] as const,
+} as const;
+
+/**
  * Rock meter (the green/yellow/red crowd gauge). Hits nudge it up, misses drag
  * it down harder — let it hit empty and the crowd boos you off stage (song
  * fail). Values are fractions of the full gauge.
