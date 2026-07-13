@@ -50,14 +50,20 @@ docs/          # design + roadmap docs
 
 - **Strict TypeScript.** No `any`. Prefer explicit domain types and discriminated
   unions. Make illegal states hard to represent where it's cheap to do so.
-- **Pure logic in `src/game/*`.** Scoring, timing, hit detection, chart utilities
-  must be deterministic functions of their inputs (no DOM/audio/React). This is
-  what keeps them testable and reusable.
+- **Pure logic in `src/game/*`.** Scoring, timing, hit detection, star power,
+  the rock meter, and chart utilities must be deterministic functions of their
+  inputs (no DOM/audio/React). This is what keeps them testable and reusable.
 - **No React re-renders in the animation loop.** High-frequency state (note
-  runtime, feedback, lane flashes) lives in refs; React state is for
-  low-frequency UI (score, phase, calibration).
-- **Constants over magic numbers.** Hit windows, lane count, scroll speed, and
-  scoring values live in `src/game/constants.ts`.
+  runtime, feedback, lane flashes, the star-power meter) lives in refs; React
+  state is for low-frequency UI (score, phase, calibration). Continuous values
+  (e.g. the star-power drain) are derived per frame from a snapshot, never
+  ticked with setState.
+- **Constants over magic numbers.** Hit windows, lane count, scroll speed,
+  scoring values, star power, and rock-meter tuning live in
+  `src/game/constants.ts`.
+- **Significant decisions get an ADR** in `docs/adr/` (see its README for the
+  format) — e.g. [ADR-0004](./docs/adr/0004-guitar-feel-gameplay.md) for the
+  star power / rock meter / perspective-highway design.
 - **Comments explain *why*, not *what*.** Especially around timing/calibration.
 
 ## Adding a track to the catalog 🎵

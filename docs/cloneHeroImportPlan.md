@@ -33,8 +33,13 @@ Clone Hero import is **implemented** for `.sng`, `.zip`, and bare `.chart` /
   first audio file).
 - Sustains import as **playable holds**: their `durationMs` is preserved and
   sustains at/over `MIN_HOLD_MS` are tagged `type: "hold"`, so the player taps
-  the head and holds the tail. HOPO/forced/tap/star-power flags are dropped;
-  chords are capped at 2 notes.
+  the head and holds the tail. **Star-power phrases** (`S 2` special events in
+  `.chart`) import as authored star phrases on the covered notes
+  ([ADR-0004](./adr/0004-guitar-feel-gameplay.md)); HOPO/forced/tap flags are
+  dropped; chords are capped at 2 notes.
+- MIDI star power is **not** read (our minimal SMF reader has no note-off
+  tracking, so the SP marker's length is unknowable); `.mid` imports get
+  auto-marked phrases at play time like non-Clone-Hero charts.
 - No automatic onset-latency/offset reconciliation beyond `song.ini`/`.chart`
   offset — use the in-game calibration if timing feels off.
 
@@ -88,6 +93,9 @@ Because v1 is **tap-only**, when importing:
 - Optionally thin extremely dense Expert charts so they stay playable by finger.
 - Star power / HOPO / forced-strum flags are dropped for now.
 
+*(Since superseded: sustains are playable holds and `.chart` star-power
+phrases import as real star phrases — see "Current behavior" above.)*
+
 ## File intake
 
 - Accept a `.zip`; unzip in-browser (e.g. with a zip library) or on the server.
@@ -98,6 +106,7 @@ Because v1 is **tap-only**, when importing:
 
 Implemented for `.sng`, `.zip`, `.chart`, and `.mid` via
 `src/game/cloneHeroParser.ts`, `src/game/sngParser.ts`, and
-`src/lib/cloneHeroClient.ts`. Remaining work: multi-stem audio mixing,
-sustain/HOPO modeling, and smarter difficulty thinning for very dense Expert
-charts on touch.
+`src/lib/cloneHeroClient.ts`. Sustains play as holds and `.chart` star-power
+phrases import as authored star phrases. Remaining work: multi-stem audio
+mixing, HOPO modeling, MIDI star power (needs note-off tracking), and smarter
+difficulty thinning for very dense Expert charts on touch.

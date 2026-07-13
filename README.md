@@ -178,7 +178,19 @@ secrets.
    normal note, then keep holding (finger down / key held) until the tail clears
    the hit line. Hold all the way for a bonus; let go early and the sustain
    drops (and your combo breaks).
-5. If notes feel early/late, nudge the **Calibration** offset.
+5. **Watch the rock meter** (the gauge in the score panel) — hits fill it,
+   misses drain it twice as fast. If it empties, you're booed off the stage
+   and have to retry.
+6. **Bank star power** — some gems carry a white ★: they come in short
+   phrases, and hitting *every* note of a phrase adds a quarter to the meter
+   at the bottom of the highway. Once it's at least half full, **tap the
+   meter** (desktop: **Enter** or **Shift**) to double all scoring while it
+   drains — stacked with the combo multiplier that's up to ×8. Completing
+   another phrase while it's blazing extends the run, and misses hurt the
+   rock meter only half as much.
+7. Chase the **stars** — the 0–5 rating next to your score grades the run by
+   the average multiplier you sustain; 5★ takes a near-full combo.
+8. If notes feel early/late, nudge the **Calibration** offset.
 
 ## How upload & auto-charting works
 
@@ -239,39 +251,46 @@ src/
   app/                 # Next.js App Router pages
     page.tsx           # landing
     play/page.tsx      # game screen (random-track fallback)
-    catalog/page.tsx   # track catalog + contributors
-    upload/page.tsx    # upload + chart generation
-    editor/page.tsx    # chart viewer placeholder
+    catalog/page.tsx   # track catalog + contributors + community charts
+    upload/page.tsx    # upload + chart generation + Clone Hero / YouTube intake
+    editor/page.tsx    # beat-grid chart editor (test-play, save, publish)
     dashboard/         # metrics dashboard + self-improvement recommendations
     api/metrics/       # POST session, GET summary, GET insights (Node routes)
+    api/charts/        # community chart catalog (list/get/publish)
   components/          # React UI (rendering + panels)
     GameScreen.tsx     # composition root for a play session
-    GameCanvas.tsx     # Canvas renderer + rAF loop + tap-the-note input
+    GameCanvas.tsx     # perspective-highway Canvas renderer + rAF loop + touch input
     PlayRandomButton.tsx # picks a random track → /play
-    ScorePanel.tsx
+    ScorePanel.tsx     # score, combo/multiplier, stars, rock meter, ratings
     CalibrationPanel.tsx
     UploadPanel.tsx
   game/                # PURE TypeScript engine — no React, no DOM
     types.ts           # domain types (Lane, ChartNote, RhythmChart, ScoreState…)
-    constants.ts       # hit windows, lane count, scroll speed, scoring values
+    constants.ts       # hit windows, lane count, scroll speed, scoring, star power
     tuning.ts/.json    # auto-tunable params the self-improvement loop may rewrite
     timing.ts          # offset/calibration math, note travel progress
-    scoring.ts         # hit detection, rating, combo, miss marking, accuracy, holds
+    scoring.ts         # hit detection, rating, combo, misses, accuracy, holds, stars
+    starPower.ts       # star phrases (authored + auto-marked), meter machine
+    rockMeter.ts       # crowd gauge: gains/losses, zones, song-fail check
     chartUtils.ts      # ids, sorting, validation, runtime-state construction
     demoChart.ts       # built-in demo chart
     autoMapper.ts      # deterministic BPM-grid automapper (+ fallback)
     audioAnalysis.ts   # pure DSP: FFT, spectral-flux onsets, tempo, charting
-    cloneHeroParser.ts # Clone Hero .chart / .mid / song.ini → RhythmChart
+    cloneHeroParser.ts # Clone Hero .chart / .mid / song.ini → RhythmChart (incl. S 2 star phrases)
     sngParser.ts       # Clone Hero .sng (SNGPKG) container reader + de-masking
   data/
     tracks.ts          # the open-source track catalog (add tracks here)
   hooks/
     useAudioEngine.ts  # Web Audio wrapper = the clock + playback
+    useYouTubeEngine.ts # YouTube IFrame player as the clock, same interface
     useRhythmGame.ts   # orchestrates rules + React state transitions
   lib/
     activeSong.ts      # in-memory hand-off between routes → /play
     analyzeClient.ts   # decode + drive the analysis worker (main thread)
     cloneHeroClient.ts # unzip + inspect/import Clone Hero songs in-browser
+    songLibrary.ts     # IndexedDB persistence for the user's songs
+    community/         # community catalog client + server-side chart sanitizer
+    sfx.ts             # synthesized sound effects (miss fret-buzz)
     metrics/           # analytics: types, aggregate, insights, store (Postgres/JSONL), client
   workers/
     analyzeWorker.ts   # runs audioAnalysis off the main thread
@@ -287,11 +306,18 @@ docs/                  # future-work plans + references
   `useAudioEngine`). Works in both audio mode and silent/demo mode.
 - **No React re-renders in the animation loop.** The canvas reads per-note
   state, feedback, and lane flashes from **refs**; React state is reserved for
-  low-frequency UI (score, phase, calibration).
-- **Pure rules.** `scoring.ts` and `timing.ts` are deterministic functions of
-  their inputs — easy to unit test (find hittable note, rating for error, mark
-  missed notes, apply hit/miss, accuracy, and the hold/sustain lifecycle). See
-  `src/game/*.test.ts` (run with `npm test`).
+  low-frequency UI (score, phase, calibration). Continuous values are
+  *derived*, not ticked: the star-power meter stores `(level, activatedAt)`
+  and the renderer computes the smooth drain each frame from a ref snapshot.
+- **Pure rules.** `scoring.ts`, `timing.ts`, `starPower.ts`, and
+  `rockMeter.ts` are deterministic functions of their inputs — easy to unit
+  test (find hittable note, rating for error, mark missed notes, apply
+  hit/miss, accuracy, the hold/sustain lifecycle, star phrases + meter, crowd
+  gauge + song fail). See `src/game/*.test.ts` (run with `npm test`).
+- **Perspective is presentation.** The 3D highway is a pure mapping inside the
+  renderer (progress → depth → y/x/scale) with an exact inverse for touch
+  input; chart data, timing, and hit windows are untouched
+  ([ADR-0004](./docs/adr/0004-guitar-feel-gameplay.md)).
 - **Stable output contract.** The grid automapper, the audio analyzer, and the
   (future) Clone Hero importer all produce the same `RhythmChart` JSON the game
   consumes — so generators can be swapped without touching gameplay.
