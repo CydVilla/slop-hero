@@ -97,6 +97,28 @@ export function starPowerScoreMultiplier(state: StarPowerState): number {
   return state.active ? STAR_POWER.scoreMultiplier : 1;
 }
 
+/**
+ * Add raw meter (whammy trickle from a wiggled star sustain). Like a phrase
+ * award it tops up an active run in place (drain restarts from the new
+ * level), but it does not count as a completed phrase. Returns the same
+ * object for a no-op gain so callers can skip the write.
+ */
+export function addStarPowerMeter(
+  state: StarPowerState,
+  amount: number,
+  songTimeMs: number,
+): StarPowerState {
+  if (amount <= 0) return state;
+  const level = starPowerMeterAt(state, songTimeMs);
+  const next = clamp(level + amount, 0, 1);
+  if (!state.active && next === state.meter) return state;
+  return {
+    ...state,
+    meter: next,
+    activatedAtMs: state.active ? songTimeMs : state.activatedAtMs,
+  };
+}
+
 /* ----------------------------- phrase tracking ---------------------------- */
 
 /**
@@ -210,12 +232,52 @@ export function markStarPhrases(notes: readonly ChartNote[]): ChartNote[] {
 
 /**
  * Guarantee a chart has star phrases: charts that carry authored phrases
- * (Clone Hero `S 2` imports) pass through untouched, everything else gets the
- * deterministic auto-marking. Returns the same chart object when unchanged.
+ * (Clone Hero `S 2` imports, editor charts) pass through untouched, everything
+ * else gets the deterministic auto-marking. Returns the same chart object when
+ * unchanged.
  */
 export function ensureStarPhrases(chart: RhythmChart): RhythmChart {
   if (chart.notes.some((n) => n.starPhrase !== undefined)) return chart;
   const marked = markStarPhrases(chart.notes);
   if (!marked.some((n) => n.starPhrase !== undefined)) return chart;
   return { ...chart, notes: marked };
+}
+
+/**
+ * Renumber star markings into contiguous phrases — the editor's brush model.
+ * Any starred note (starPhrase defined, value irrelevant) chains into the
+ * same phrase as starred notes in the previous time step; a time step with no
+ * starred note splits phrases. Judged per time GROUP so a mixed chord (one
+ * starred, one normal lane) never splits a run. Returns NEW note objects with
+ * phrases renumbered 0..n in time order; unstarred notes pass through.
+ */
+export function groupStarPhrases(notes: readonly ChartNote[]): ChartNote[] {
+  const sorted = sortNotes(notes);
+  const phraseById = new Map<string, number>();
+  let phraseId = -1;
+  let previousGroupStarred = false;
+  let i = 0;
+  while (i < sorted.length) {
+    // One time group = all notes sharing this timeMs.
+    let j = i;
+    let groupStarred = false;
+    while (j < sorted.length && (sorted[j] as ChartNote).timeMs === (sorted[i] as ChartNote).timeMs) {
+      if ((sorted[j] as ChartNote).starPhrase !== undefined) groupStarred = true;
+      j += 1;
+    }
+    if (groupStarred) {
+      if (!previousGroupStarred) phraseId += 1;
+      for (let k = i; k < j; k += 1) {
+        const note = sorted[k] as ChartNote;
+        if (note.starPhrase !== undefined) phraseById.set(note.id, phraseId);
+      }
+    }
+    previousGroupStarred = groupStarred;
+    i = j;
+  }
+  return notes.map((note) => {
+    const id = phraseById.get(note.id);
+    if (id === undefined) return note;
+    return { ...note, starPhrase: id };
+  });
 }

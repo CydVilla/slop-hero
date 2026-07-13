@@ -18,7 +18,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { COUNTDOWN_MS, FEEDBACK_DURATION_MS, HIT_WINDOWS } from "@/game/constants";
+import { COUNTDOWN_MS, FEEDBACK_DURATION_MS, HIT_WINDOWS, WHAMMY } from "@/game/constants";
+import { findHopoAutoHits } from "@/game/hopo";
 import { defaultCalibrationOffsetMs } from "@/game/tuning";
 import {
   createRuntimeState,
@@ -36,6 +37,7 @@ import {
   createInitialScore,
   findCompletedHoldIds,
   isComplete,
+  isHoldNote,
   resolveRelease,
   resolveTap,
 } from "@/game/scoring";
@@ -48,6 +50,7 @@ import {
 } from "@/game/rockMeter";
 import {
   activateStarPower as spActivate,
+  addStarPowerMeter,
   awardStarPhrase,
   buildPhraseIndex,
   createStarPower,
@@ -61,6 +64,7 @@ import type {
   ChartNote,
   GamePhase,
   HitFeedback,
+  HitJudgement,
   Lane,
   NoteRuntimeState,
   RhythmChart,
@@ -127,6 +131,20 @@ export interface RhythmGame {
    * completing it if the tail is done, or dropping it (combo break) if early.
    */
   releaseLane: (lane: Lane) => void;
+  /**
+   * Mark a lane as physically held (finger resting/slid there, key down) for
+   * HOPO auto-hits. Purely positional — does NOT judge a tap. Callers pair
+   * every holdLane with an unholdLane; multiple holders per lane are counted.
+   */
+  holdLane: (lane: Lane) => void;
+  /** Undo one {@link holdLane} on that lane. */
+  unholdLane: (lane: Lane) => void;
+  /**
+   * Whammy: the finger holding a star-phrase sustain in this lane wiggled (or
+   * the held key auto-repeated). While wiggling continues, the sustain
+   * trickles extra star-power meter.
+   */
+  whammyLane: (lane: Lane) => void;
   /** @deprecated Use {@link pressLane}. Retained for callers that only tap. */
   tapLane: (lane: Lane) => void;
   /** Called once per animation frame with the current song time (ms). */
@@ -138,6 +156,15 @@ export interface RhythmGame {
 
 function emptyLaneFlash(): Record<Lane, number> {
   return { 0: -Infinity, 1: -Infinity, 2: -Infinity, 3: -Infinity, 4: -Infinity };
+}
+
+function emptyLaneCounts(): Record<Lane, number> {
+  return { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+}
+
+/** Frame delta clamped to something sane (rAF cadence, at most ~2 frames). */
+function clampDelta(deltaMs: number): number {
+  return Math.min(Math.max(deltaMs, 0), 40);
 }
 
 function notesById(chart: RhythmChart): Map<string, ChartNote> {
@@ -194,6 +221,14 @@ export function useRhythmGame(
   const phraseIndexRef = useRef<Map<number, StarPhraseProgress>>(
     buildPhraseIndex(chart.notes),
   );
+  // How many fingers/keys are physically holding each lane right now — the
+  // positional state HOPO auto-hits key off. Counted (not boolean) so two
+  // holders releasing in either order leave the right state behind.
+  const heldLanesRef = useRef<Record<Lane, number>>(emptyLaneCounts());
+  // Sustains being whammied: note id → song time of the last wiggle.
+  const whammyAtRef = useRef<Map<string, number>>(new Map());
+  // Previous update() timestamp, for integrating the whammy trickle.
+  const lastUpdateMsRef = useRef(0);
 
   // Mirror values that tap/update read at high frequency to avoid stale closures.
   const phaseRef = useRef<GamePhase>("idle");
@@ -226,6 +261,11 @@ export function useRhythmGame(
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
     phraseIndexRef.current = buildPhraseIndex(chart.notes);
+    // heldLanesRef is deliberately NOT reset: it mirrors PHYSICAL input
+    // (fingers/keys that are still down stay down across a restart), and
+    // wiping it would blind HOPO auto-hits until the player re-pressed.
+    whammyAtRef.current.clear();
+    lastUpdateMsRef.current = 0;
     durationRef.current = chartDurationMs(chart);
     setScore(createInitialScore(chart.notes.length));
     starPowerRef.current = createStarPower();
@@ -290,6 +330,9 @@ export function useRhythmGame(
     feedbackRef.current = [];
     laneFlashRef.current = emptyLaneFlash();
     phraseIndexRef.current = buildPhraseIndex(chart.notes);
+    // heldLanesRef intentionally survives (physical input state; see above).
+    whammyAtRef.current.clear();
+    lastUpdateMsRef.current = 0;
     setScore(createInitialScore(chart.notes.length));
     commitStarPower(createStarPower());
     commitRockMeter(createRockMeter());
@@ -367,6 +410,38 @@ export function useRhythmGame(
     return out;
   }, []);
 
+  // Everything that happens when a note is successfully judged — shared by
+  // finger/key taps (pressLane) and HOPO auto-hits (update): runtime state,
+  // sustain start, score + rock meter, feedback, and star-phrase bookkeeping.
+  const applyJudgedHit = useCallback(
+    (note: ChartNote, rating: HitJudgement, errorMs: number, t: number) => {
+      const startsHold = isHoldNote(note);
+      runtimeRef.current.set(note.id, {
+        judged: true,
+        rating,
+        judgedAtMs: t,
+        // Begin tracking the sustain; taps stay undefined.
+        hold: startsHold ? "holding" : undefined,
+        holdStartMs: startsHold ? t : undefined,
+      });
+      if (startsHold) activeHoldsRef.current.add(note.id);
+      laneFlashRef.current[note.lane] = t;
+      const spMult = starPowerScoreMultiplier(starPowerRef.current);
+      setScore((s) => applyHit(s, rating, spMult));
+      commitRockMeter(rockMeterOnHit(rockMeterRef.current, rating));
+      pushFeedback(note.lane, rating, t, errorMs);
+      // Star phrase bookkeeping: completing one banks a quarter bar of meter
+      // (extending the run if star power is already blazing).
+      if (note.starPhrase !== undefined) {
+        if (registerStarNoteHit(phraseIndexRef.current, note.starPhrase)) {
+          commitStarPower(awardStarPhrase(starPowerRef.current, t));
+          pushFeedback(note.lane, rating, t, 0, undefined, true);
+        }
+      }
+    },
+    [pushFeedback, commitRockMeter, commitStarPower],
+  );
+
   const pressLane = useCallback(
     (lane: Lane) => {
       if (phaseRef.current !== "playing") return;
@@ -395,32 +470,12 @@ export function useRhythmGame(
       );
 
       if (result.kind === "hit") {
-        runtimeRef.current.set(result.note.id, {
-          judged: true,
-          rating: result.rating,
-          judgedAtMs: t,
-          // Begin tracking the sustain; taps stay undefined.
-          hold: result.startsHold ? "holding" : undefined,
-          holdStartMs: result.startsHold ? t : undefined,
-        });
-        if (result.startsHold) activeHoldsRef.current.add(result.note.id);
-        const spMult = starPowerScoreMultiplier(starPowerRef.current);
-        setScore((s) => applyHit(s, result.rating, spMult));
-        commitRockMeter(rockMeterOnHit(rockMeterRef.current, result.rating));
-        pushFeedback(lane, result.rating, t, result.errorMs);
-        // Star phrase bookkeeping: completing one banks a quarter bar of meter
-        // (extending the run if star power is already blazing).
-        if (result.note.starPhrase !== undefined) {
-          if (registerStarNoteHit(phraseIndexRef.current, result.note.starPhrase)) {
-            commitStarPower(awardStarPhrase(starPowerRef.current, t));
-            pushFeedback(lane, result.rating, t, 0, undefined, true);
-          }
-        }
+        applyJudgedHit(result.note, result.rating, result.errorMs, t);
       }
       // Stray taps (no note in window) are intentionally forgiving on a
       // touchscreen: they flash the lane but do not break combo.
     },
-    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, commitRockMeter, commitStarPower],
+    [audio, chart.offsetMs, applyJudgedHit],
   );
 
   const releaseLane = useCallback(
@@ -470,9 +525,38 @@ export function useRhythmGame(
     [audio, chart.offsetMs, pushFeedback, activeHoldNotes, commitRockMeter],
   );
 
+  // Positional lane holds (for HOPO auto-hits). Deliberately phase-agnostic:
+  // fingers/keys stay physically down across pauses, so the counts must too.
+  const holdLane = useCallback((lane: Lane) => {
+    heldLanesRef.current[lane] += 1;
+  }, []);
+
+  const unholdLane = useCallback((lane: Lane) => {
+    heldLanesRef.current[lane] = Math.max(0, heldLanesRef.current[lane] - 1);
+  }, []);
+
+  // A wiggle on a held star sustain: stamp it; update() integrates the trickle.
+  const whammyLane = useCallback(
+    (lane: Lane) => {
+      if (phaseRef.current !== "playing") return;
+      const t = audio.getTimeMs();
+      for (const note of activeHoldNotes()) {
+        if (note.lane === lane && note.starPhrase !== undefined) {
+          whammyAtRef.current.set(note.id, t);
+        }
+      }
+    },
+    [audio, activeHoldNotes],
+  );
+
   const update = useCallback(
     (songTimeMs: number) => {
       if (phaseRef.current !== "playing") return;
+
+      // Frame delta for time-integrated effects (whammy). Clamped so a pause,
+      // seek, or tab-switch hiccup can't dump a huge lump of meter at once.
+      const deltaMs = clampDelta(songTimeMs - lastUpdateMsRef.current);
+      lastUpdateMsRef.current = songTimeMs;
 
       // Settle an active star-power run: once fully drained, switch it off.
       const ticked = tickStarPower(starPowerRef.current, songTimeMs);
@@ -523,6 +607,59 @@ export function useRhythmGame(
         }
       }
 
+      // HOPO auto-hits: notes crossing the line right now whose lane is
+      // physically held (finger resting/slid there, key down) and whose
+      // previous note was hit fire without a fresh tap.
+      const held = heldLanesRef.current;
+      if (held[0] + held[1] + held[2] + held[3] + held[4] > 0) {
+        const heldSet = new Set<Lane>();
+        for (const lane of [0, 1, 2, 3, 4] as const) {
+          if (held[lane] > 0) heldSet.add(lane);
+        }
+        const chartTimeMs = songTimeMs - chart.offsetMs + calibrationRef.current;
+        const [lo, hi] = noteIndexRange(
+          sortedNotesRef.current,
+          chartTimeMs - HIT_WINDOWS.perfect,
+          chartTimeMs + HIT_WINDOWS.perfect,
+        );
+        const autoHits = findHopoAutoHits(
+          sortedNotesRef.current,
+          runtimeRef.current,
+          heldSet,
+          songTimeMs,
+          chart.offsetMs,
+          calibrationRef.current,
+          lo,
+          hi,
+        );
+        for (const { note, errorMs } of autoHits) {
+          // Auto-hits fire within the perfect window by construction.
+          applyJudgedHit(note, "perfect", errorMs, songTimeMs);
+        }
+      }
+
+      // Whammy trickle: sustains wiggled within the activity window squeeze
+      // extra star-power meter out of their star phrase. Ref-only writes — the
+      // canvas derives the meter from the ref every frame, and nothing in the
+      // low-frequency React mirror depends on the raw meter level.
+      if (whammyAtRef.current.size > 0 && deltaMs > 0) {
+        let whammiedMs = 0;
+        for (const [noteId, at] of whammyAtRef.current) {
+          if (activeHoldsRef.current.has(noteId)) {
+            if (songTimeMs - at <= WHAMMY.activityWindowMs) whammiedMs += deltaMs;
+          } else {
+            whammyAtRef.current.delete(noteId); // sustain resolved → forget it
+          }
+        }
+        if (whammiedMs > 0) {
+          starPowerRef.current = addStarPowerMeter(
+            starPowerRef.current,
+            whammiedMs * WHAMMY.gainPerMs,
+            songTimeMs,
+          );
+        }
+      }
+
       // Auto-complete sustains the player kept pressed through the tail's end,
       // so a held note resolves even without an explicit release event. Only the
       // handful of live sustains are checked, not every note in the chart.
@@ -560,7 +697,7 @@ export function useRhythmGame(
         audio.stop();
       }
     },
-    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, commitRockMeter, commitStarPower],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, applyJudgedHit, commitRockMeter, commitStarPower],
   );
 
   // Finish as soon as every note has been judged — but not while a hold's tail
@@ -614,6 +751,9 @@ export function useRhythmGame(
       restart,
       pressLane,
       releaseLane,
+      holdLane,
+      unholdLane,
+      whammyLane,
       tapLane: pressLane,
       update,
       adjustCalibration,
@@ -633,6 +773,9 @@ export function useRhythmGame(
       restart,
       pressLane,
       releaseLane,
+      holdLane,
+      unholdLane,
+      whammyLane,
       update,
       adjustCalibration,
       resetCalibration,

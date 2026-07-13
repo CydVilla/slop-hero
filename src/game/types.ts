@@ -33,6 +33,14 @@ export interface ChartNote {
    * keep their authored `S 2` phrases; other sources get phrases auto-marked.
    */
   starPhrase?: number;
+  /**
+   * Hammer-on / pull-off (touch adaptation): while the previous note was hit,
+   * a HOPO auto-hits when it crosses the line with its lane already held —
+   * slide or hold a finger instead of re-tapping fast runs. `.chart` imports
+   * derive this from note spacing plus forced (`N 5`) / tap (`N 6`) flags;
+   * other sources get naturals auto-marked. Undefined = never marked.
+   */
+  hopo?: boolean;
 }
 
 export interface RhythmChart {

@@ -64,6 +64,16 @@ interface GameCanvasProps {
    * held in that lane. Optional — taps work without it.
    */
   onLaneRelease?: (lane: Lane) => void;
+  /**
+   * Positional hold tracking for HOPO auto-hits: a finger is now resting on /
+   * slid onto this lane. Paired with onLaneUnhold; separate from press/release
+   * so slides never judge stray taps or drop sustains.
+   */
+  onLaneHold?: (lane: Lane) => void;
+  /** The finger left this lane (slid away or lifted). */
+  onLaneUnhold?: (lane: Lane) => void;
+  /** The finger holding a sustain in this lane wiggled (whammy). */
+  onWhammy?: (lane: Lane) => void;
   /** Tapping the star-power meter (bottom center) unleashes banked star power. */
   onActivateStarPower?: () => void;
   /** Current combo, used to drive escalating "on fire" visuals. */
@@ -226,6 +236,9 @@ export function GameCanvas({
   onFrame,
   onLanePress,
   onLaneRelease,
+  onLaneHold,
+  onLaneUnhold,
+  onWhammy,
   onActivateStarPower,
   combo = 0,
 }: GameCanvasProps): React.JSX.Element {
@@ -233,9 +246,23 @@ export function GameCanvas({
   const ripplesRef = useRef<TapRipple[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const ringsRef = useRef<HitRing[]>([]);
-  // Which lane each active pointer is holding, so multi-touch chords/holds each
-  // release the correct lane on pointer-up regardless of finger order.
+  // Which lane each active pointer PRESSED (the sustain anchor), so multi-touch
+  // chords/holds each release the correct lane on pointer-up regardless of
+  // finger order — sliding never re-routes an in-progress sustain.
   const pointerLanesRef = useRef<Map<number, Lane>>(new Map());
+  // Which lane each pointer currently HOVERS (follows slides) — the positional
+  // state reported through onLaneHold/onLaneUnhold for HOPO auto-hits.
+  const hoverLanesRef = useRef<Map<number, Lane>>(new Map());
+  // Last pointer position, for detecting whammy wiggles.
+  const lastPosRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  // Song time of the last wiggle per lane, for the tail-wobble visual.
+  const whammyVisRef = useRef<Record<Lane, number>>({
+    0: -Infinity,
+    1: -Infinity,
+    2: -Infinity,
+    3: -Infinity,
+    4: -Infinity,
+  });
   // Feedback ids already turned into bursts, so each hit only sparks once even
   // though the feedback entry lingers for a few frames.
   const sparkedRef = useRef<Set<string>>(new Set());
@@ -249,6 +276,9 @@ export function GameCanvas({
     onFrame,
     onLanePress,
     onLaneRelease,
+    onLaneHold,
+    onLaneUnhold,
+    onWhammy,
     onActivateStarPower,
     combo,
   });
@@ -260,6 +290,9 @@ export function GameCanvas({
     onFrame,
     onLanePress,
     onLaneRelease,
+    onLaneHold,
+    onLaneUnhold,
+    onWhammy,
     onActivateStarPower,
     combo,
   };
@@ -298,12 +331,15 @@ export function GameCanvas({
       const persp = makePerspective(rect.width, rect.height);
       const lane = laneAtPoint(persp, x, y);
       pointerLanesRef.current.set(e.pointerId, lane);
+      hoverLanesRef.current.set(e.pointerId, lane);
+      lastPosRef.current.set(e.pointerId, { x, y });
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
         // Capture is best-effort; releases still work via the map fallback.
       }
       press(lane);
+      propsRef.current.onLaneHold?.(lane);
       ripplesRef.current.push({
         x,
         y,
@@ -317,14 +353,57 @@ export function GameCanvas({
     [],
   );
 
+  // Pointer-move while down: two jobs. (1) Slides — the finger walking onto
+  // another lane moves its positional hold there (HOPO auto-hits) WITHOUT
+  // judging a tap or dropping the sustain it anchors. (2) Whammy — wiggling
+  // feeds the sustain anchored where the finger first landed.
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const anchor = pointerLanesRef.current.get(e.pointerId);
+      if (anchor === undefined) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const persp = makePerspective(rect.width, rect.height);
+
+      const hover = hoverLanesRef.current.get(e.pointerId);
+      const lane = laneAtPoint(persp, x, y);
+      if (lane !== hover) {
+        if (hover !== undefined) propsRef.current.onLaneUnhold?.(hover);
+        propsRef.current.onLaneHold?.(lane);
+        hoverLanesRef.current.set(e.pointerId, lane);
+      }
+
+      const last = lastPosRef.current.get(e.pointerId);
+      if (last) {
+        const dx = x - last.x;
+        const dy = y - last.y;
+        if (dx * dx + dy * dy >= 16) {
+          // ≥ 4px of movement = a wiggle.
+          propsRef.current.onWhammy?.(anchor);
+          whammyVisRef.current[anchor] = propsRef.current.getTimeMs();
+          lastPosRef.current.set(e.pointerId, { x, y });
+        }
+      } else {
+        lastPosRef.current.set(e.pointerId, { x, y });
+      }
+    },
+    [],
+  );
+
   // Pointer-up / cancel: release the lane this pointer was holding so any
-  // in-progress sustain resolves. Looked up by pointerId so the right lane is
-  // released even with several fingers down at once.
+  // in-progress sustain resolves, and clear its positional hold. Looked up by
+  // pointerId so the right lane is released even with several fingers down.
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       const lane = pointerLanesRef.current.get(e.pointerId);
       if (lane === undefined) return;
       pointerLanesRef.current.delete(e.pointerId);
+      const hover = hoverLanesRef.current.get(e.pointerId);
+      hoverLanesRef.current.delete(e.pointerId);
+      lastPosRef.current.delete(e.pointerId);
+      if (hover !== undefined) propsRef.current.onLaneUnhold?.(hover);
       propsRef.current.onLaneRelease?.(lane);
     },
     [],
@@ -385,7 +464,7 @@ export function GameCanvas({
       ctx.clearRect(0, 0, persp.w, persp.h);
       drawBoard(ctx, persp, laneFlashRef.current, t, spActive);
       drawBeatLines(ctx, c, t, cal, persp);
-      drawNotes(ctx, c, t, cal, persp, runtimeRef.current, spActive);
+      drawNotes(ctx, c, t, cal, persp, runtimeRef.current, spActive, whammyVisRef.current);
       drawHitLine(ctx, persp, heat, t, spActive);
       drawHitRings(ctx, ringsRef.current, t);
       drawParticles(ctx, particlesRef.current, t);
@@ -409,11 +488,12 @@ export function GameCanvas({
     <canvas
       ref={canvasRef}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       onLostPointerCapture={handlePointerUp}
       style={{ width: "100%", height: "100%", display: "block", touchAction: "none" }}
-      aria-label="Note highway — tap the lane under each note as it reaches the line; hold long notes until their tail clears. Tap the glowing meter at the bottom to unleash star power."
+      aria-label="Note highway — tap the lane under each note as it reaches the line; hold long notes until their tail clears. Ringed notes are hammer-ons: slide or rest a finger on their lane and they play themselves. Wiggle a held star note for bonus star power, and tap the glowing meter at the bottom to unleash it."
     />
   );
 }
@@ -806,6 +886,7 @@ function drawNotes(
   persp: Perspective,
   runtime: Map<string, NoteRuntimeState> | null,
   spActive: boolean,
+  whammyVis: Record<Lane, number> | null,
 ): void {
   const baseRadius = gemRadius(persp.laneW);
 
@@ -827,7 +908,17 @@ function drawNotes(
         chart.offsetMs,
         cal,
       );
-      drawActiveHold(ctx, persp, note.lane, endProgress, baseRadius, color, t);
+      const whammiedAt = whammyVis?.[note.lane] ?? -Infinity;
+      drawActiveHold(
+        ctx,
+        persp,
+        note.lane,
+        endProgress,
+        baseRadius,
+        color,
+        t,
+        isStar && t - whammiedAt < WHAMMY_WOBBLE_MS,
+      );
       continue;
     }
 
@@ -859,13 +950,18 @@ function drawNotes(
     }
 
     drawGem(ctx, cx, y, radius, color, alpha);
+    if (note.hopo) drawHopoCore(ctx, cx, y, radius, alpha);
     if (isStar) drawStarOverlay(ctx, cx, y, radius, alpha);
   }
 }
 
+/** How long the whammy wobble visual lingers after the last wiggle. */
+const WHAMMY_WOBBLE_MS = 220;
+
 /**
  * A sustain currently being held: a bright, pulsing tail draining down into the
  * hit line with a glowing head locked at the pad, so it reads as "keep holding".
+ * A whammied star sustain wobbles side to side and burns brighter.
  */
 function drawActiveHold(
   ctx: CanvasRenderingContext2D,
@@ -875,20 +971,23 @@ function drawActiveHold(
   baseRadius: number,
   color: string,
   t: number,
+  whammied = false,
 ): void {
   const pulse = 0.7 + 0.3 * Math.sin(t / 90);
   const headDepth = 1;
   const tailDepth = clamp(depthForProgress(endProgress), 0, headDepth);
+  const wobble = whammied ? Math.sin(t / 26) * baseRadius * 0.14 : 0;
   if (headDepth - tailDepth > 0.005) {
     ctx.save();
+    if (wobble !== 0) ctx.translate(wobble, 0);
     const yTop = yAtDepth(persp, tailDepth);
     const yHead = persp.hitLineY;
     const grad = ctx.createLinearGradient(0, yTop, 0, yHead);
-    grad.addColorStop(0, rgba(color, 0.15 * pulse));
-    grad.addColorStop(1, rgba(color, 0.85 * pulse, 0.25));
+    grad.addColorStop(0, rgba(color, (whammied ? 0.3 : 0.15) * pulse));
+    grad.addColorStop(1, rgba(color, (whammied ? 0.95 : 0.85) * pulse, 0.25));
     ctx.fillStyle = grad;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 16 * pulse;
+    ctx.shadowColor = whammied ? STAR_POWER_COLOR : color;
+    ctx.shadowBlur = (whammied ? 26 : 16) * pulse;
     tailQuad(ctx, persp, lane, tailDepth, headDepth, baseRadius * 0.72);
     ctx.fill();
     ctx.restore();
@@ -896,7 +995,7 @@ function drawActiveHold(
   // Glowing head anchored at the pad.
   drawGem(
     ctx,
-    laneCenterX(persp, lane, 1),
+    laneCenterX(persp, lane, 1) + wobble * 0.5,
     persp.hitLineY,
     baseRadius * (0.92 + 0.08 * pulse),
     color,
@@ -1000,6 +1099,32 @@ function drawGem(
   ctx.ellipse(cx, cy - radius * 0.4, radius * 0.5, radius * 0.27, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  ctx.restore();
+}
+
+/**
+ * The hollow "tappable" core stamped on HOPO gems — a crisp white ring around
+ * a darker center, the classic hammer-on look. Drawn over the gem body.
+ */
+function drawHopoCore(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  alpha: number,
+): void {
+  ctx.save();
+  ctx.fillStyle = rgba("#0b0e1a", 0.8 * alpha);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.48, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rgba("#ffffff", 0.92 * alpha);
+  ctx.lineWidth = Math.max(2, radius * 0.16);
+  ctx.shadowColor = "#ffffff";
+  ctx.shadowBlur = 6 * alpha;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.42, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 }
 

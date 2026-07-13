@@ -11,6 +11,22 @@ behind these changes live in [`docs/adr/`](./docs/adr/).
 
 ### Added
 
+- **HOPO notes (hammer-ons / pull-offs)**, adapted for touch: ring-marked
+  notes auto-hit when they cross the line with their lane already held — rest
+  or slide a finger (slides never count as stray taps or drop sustains), and
+  fast runs play themselves as long as the chain stays unbroken. Clone Hero
+  `.chart` imports keep authored forced (`N 5`) / tap (`N 6`) flags on top of
+  the natural 65/192-beat spacing rule; every other chart gets naturals
+  auto-marked. ([ADR-0005](./docs/adr/0005-hopo-whammy-star-authoring.md))
+- **Whammy** — wiggle the finger holding a ★ star-phrase sustain (desktop:
+  key auto-repeat) to squeeze extra star-power meter out of the tail (a
+  quarter bar per 4s), with a wobbling, brighter tail while it lasts.
+- **Star-phrase authoring in the editor** — a ★ brush paints phrase
+  membership onto existing notes; touching starred notes group into one
+  phrase on build. Authored phrases (editor or import) now also survive
+  publishing to the community catalog (sanitized and bounded), instead of
+  being re-marked on other players' devices.
+
 - **Star power** — Guitar Hero's signature mechanic. Charts now carry star
   phrases (Clone Hero `.chart` imports keep their authored `S 2` phrases;
   every other source gets deterministic auto-marked ones). Hitting every note

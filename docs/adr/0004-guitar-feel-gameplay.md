@@ -1,6 +1,7 @@
 # 0004 — Guitar-feel gameplay: star power, rock meter, perspective highway
 
-- **Status:** Accepted
+- **Status:** Accepted — the "sanitizer does not carry `starPhrase`" point is
+  amended by [0005](./0005-hopo-whammy-star-authoring.md)
 - **Date:** 2026-07-13
 - **PR:** [#19](https://github.com/CydVilla/slop-hero/pull/19)
 

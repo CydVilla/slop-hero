@@ -19,6 +19,8 @@ export const COMMUNITY_MIN_NOTES = 4;
 export const COMMUNITY_MAX_TIME_MS = 15 * 60_000;
 /** Longest single sustain we accept. */
 export const COMMUNITY_MAX_HOLD_MS = 30_000;
+/** Highest star-phrase id we accept (bounds the phrase index at play time). */
+export const COMMUNITY_MAX_STAR_PHRASE = 9_999;
 
 const DIFFICULTIES = new Set(["easy", "medium", "hard", "expert"]);
 const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
@@ -67,6 +69,20 @@ function sanitizeNote(input: unknown, index: number): ChartNote | null {
   const durationMs = num(o.durationMs, 0, COMMUNITY_MAX_HOLD_MS);
   const isHold = durationMs !== undefined && durationMs > 0;
 
+  // Authored star-power phrase membership (editor ★ brush / Clone Hero
+  // imports) and HOPO flags survive publishing — rebuilt, never passed
+  // through. Charts without them get play-time auto-marking on the player's
+  // device instead.
+  const starPhraseRaw =
+    typeof o.starPhrase === "number" ? o.starPhrase : undefined;
+  const starPhrase =
+    starPhraseRaw !== undefined &&
+    Number.isInteger(starPhraseRaw) &&
+    starPhraseRaw >= 0 &&
+    starPhraseRaw <= COMMUNITY_MAX_STAR_PHRASE
+      ? starPhraseRaw
+      : undefined;
+
   return {
     // Server-assigned ids: deterministic, bounded, and impossible to spoof.
     id: `c_${index.toString(36)}`,
@@ -74,6 +90,8 @@ function sanitizeNote(input: unknown, index: number): ChartNote | null {
     lane: laneRaw as Lane,
     durationMs: isHold ? Math.round(durationMs) : undefined,
     type: isHold ? "hold" : "tap",
+    starPhrase,
+    hopo: o.hopo === true ? true : undefined,
   };
 }
 
