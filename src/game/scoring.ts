@@ -10,6 +10,7 @@ import {
   MIN_HOLD_MS,
   MISS_THRESHOLD_MS,
   SCORE_VALUES,
+  STAR_RATING_THRESHOLDS,
   SUSTAIN_POINTS_PER_MS,
 } from "./constants";
 import { sustainEndTimeMs, timingErrorMs } from "./timing";
@@ -209,10 +210,18 @@ export function holdBonusPoints(durationMs: number): number {
   return Math.round(Math.max(0, durationMs) * SUSTAIN_POINTS_PER_MS);
 }
 
-/** Apply a successful judgement to a score state, returning a NEW state. */
-export function applyHit(score: ScoreState, rating: HitJudgement): ScoreState {
+/**
+ * Apply a successful judgement to a score state, returning a NEW state.
+ * `bonusMultiplier` stacks on the combo multiplier — pass the star-power
+ * multiplier (2 while active) to double points GH-style, up to 8× total.
+ */
+export function applyHit(
+  score: ScoreState,
+  rating: HitJudgement,
+  bonusMultiplier = 1,
+): ScoreState {
   const combo = score.combo + 1;
-  const points = SCORE_VALUES[rating] * comboMultiplier(combo);
+  const points = SCORE_VALUES[rating] * comboMultiplier(combo) * bonusMultiplier;
   return {
     ...score,
     score: score.score + points,
@@ -241,8 +250,10 @@ export function applyMiss(score: ScoreState): ScoreState {
 export function applyHoldComplete(
   score: ScoreState,
   durationMs: number,
+  bonusMultiplier = 1,
 ): ScoreState {
-  const bonus = holdBonusPoints(durationMs) * comboMultiplier(score.combo);
+  const bonus =
+    holdBonusPoints(durationMs) * comboMultiplier(score.combo) * bonusMultiplier;
   return {
     ...score,
     score: score.score + bonus,
@@ -333,4 +344,32 @@ export function accuracyPercent(score: ScoreState): number {
 /** Whether every note in the chart has been judged. */
 export function isComplete(score: ScoreState): boolean {
   return score.perfect + score.great + score.good + score.miss >= score.totalNotes;
+}
+
+/**
+ * The chart's base score: every note hit perfect with every sustain completed,
+ * at ×1 — no combo or star-power multipliers. The denominator for star ratings.
+ */
+export function baseChartScore(notes: readonly ChartNote[]): number {
+  let total = 0;
+  for (const note of notes) {
+    total += SCORE_VALUES.perfect;
+    if (isHoldNote(note)) total += holdBonusPoints(note.durationMs ?? 0);
+  }
+  return total;
+}
+
+/**
+ * GH-style star rating (0–5): the run's score over the chart's base score is
+ * the average multiplier the player sustained; each threshold crossed earns a
+ * star. 5 stars needs a long stretch at high multiplier (or star power).
+ */
+export function starRating(score: number, baseScore: number): number {
+  if (baseScore <= 0) return 0;
+  const ratio = score / baseScore;
+  let stars = 0;
+  for (const threshold of STAR_RATING_THRESHOLDS) {
+    if (ratio >= threshold) stars += 1;
+  }
+  return stars;
 }

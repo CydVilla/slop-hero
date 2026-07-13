@@ -24,7 +24,8 @@ import styles from "./GameScreen.module.css";
 
 import { KEYBOARD_LANE_MAP } from "@/game/constants";
 import { chartDurationMs } from "@/game/chartUtils";
-import { accuracyPercent, isComplete } from "@/game/scoring";
+import { accuracyPercent, baseChartScore, isComplete, starRating } from "@/game/scoring";
+import { ensureStarPhrases } from "@/game/starPower";
 import type { RhythmChart } from "@/game/types";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import { useRhythmGame } from "@/hooks/useRhythmGame";
@@ -46,13 +47,20 @@ interface GameScreenProps {
 }
 
 export function GameScreen({
-  chart,
+  chart: rawChart,
   audioUrl,
   youtubeId,
   title,
   subtitle,
   sessionMeta,
 }: GameScreenProps): React.JSX.Element {
+  // Every chart gets star-power phrases: authored ones (Clone Hero imports)
+  // pass through, everything else is auto-marked. Done once here so the game
+  // hook and the renderer agree on which notes are stars.
+  const chart = useMemo(() => ensureStarPhrases(rawChart), [rawChart]);
+  // Denominator for the GH-style star rating (score ÷ base score).
+  const baseScore = useMemo(() => baseChartScore(chart.notes), [chart]);
+
   // Both engines are instantiated (rules of hooks), but only the selected one is
   // ever driven. The Web Audio engine stays inert until loaded/played, and the
   // YouTube engine only creates a player when given a video id.
@@ -61,7 +69,9 @@ export function GameScreen({
   const audio = youtubeId ? youtube.engine : webAudio;
 
   const game = useRhythmGame(chart, audio);
-  const { pressLane, releaseLane, togglePause, start, restart } = game;
+  const { pressLane, releaseLane, togglePause, start, restart, activateStarPower } =
+    game;
+  const stars = starRating(game.score.score, baseScore);
 
   const [debug, setDebug] = useState({ song: 0, chart: 0 });
 
@@ -87,15 +97,20 @@ export function GameScreen({
     };
   }, [youtubeId, audioUrl, durationMs, loadFromUrl, loadSilent]);
 
-  // Keyboard input (desktop testing only): A/S/D/F/G lanes, Space play/pause.
-  // The primary input is tapping the notes directly on the highway. Key-down
-  // presses (and begins a sustain); key-up releases it, mirroring touch.
+  // Keyboard input (desktop testing only): A/S/D/F/G lanes, Space play/pause,
+  // Enter or Shift unleashes star power. The primary input is tapping the notes
+  // directly on the highway. Key-down presses (and begins a sustain); key-up
+  // releases it, mirroring touch.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
       if (e.code === "Space") {
         e.preventDefault();
         togglePause();
+        return;
+      }
+      if (e.code === "Enter" || e.key === "Shift") {
+        activateStarPower();
         return;
       }
       const lane = KEYBOARD_LANE_MAP[e.key.toLowerCase()];
@@ -115,7 +130,7 @@ export function GameScreen({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [pressLane, releaseLane, togglePause]);
+  }, [pressLane, releaseLane, togglePause, activateStarPower]);
 
   // Low-frequency debug clock (10 fps) so the calibration readout updates
   // without coupling to the animation loop.
@@ -130,12 +145,14 @@ export function GameScreen({
     return () => window.clearInterval(id);
   }, [game.phase, getTimeMs, calibrationOffsetMs, chart.offsetMs]);
 
-  // Record one anonymous metric per finished run. The flag resets when a new
-  // run starts (countdown/playing) so replays are counted, but a single finish
-  // — which two code paths in the engine can trigger — is recorded only once.
+  // Record one anonymous metric per finished (or failed) run. The flag resets
+  // when a new run starts (countdown/playing) so replays are counted, but a
+  // single finish — which two code paths in the engine can trigger — is
+  // recorded only once. Failed runs record too (completed: false) so the
+  // self-improvement loop sees charts that boo players off the stage.
   const recordedRef = useRef(false);
   useEffect(() => {
-    if (game.phase === "finished") {
+    if (game.phase === "finished" || game.phase === "failed") {
       if (recordedRef.current) return;
       recordedRef.current = true;
       const score = game.score;
@@ -167,6 +184,7 @@ export function GameScreen({
   const showCountdown = game.phase === "countdown";
   const showPaused = game.phase === "paused";
   const showFinished = game.phase === "finished";
+  const showFailed = game.phase === "failed";
   // In YouTube mode the player must be ready before we can start playback.
   const ytLoading = Boolean(youtubeId) && audio.status !== "ready";
 
@@ -207,15 +225,22 @@ export function GameScreen({
             runtimeRef={game.runtimeRef}
             feedbackRef={game.feedbackRef}
             laneFlashRef={game.laneFlashRef}
+            starPowerRef={game.starPowerRef}
             onFrame={game.update}
             onLanePress={pressLane}
             onLaneRelease={releaseLane}
+            onActivateStarPower={activateStarPower}
             combo={game.score.combo}
           />
         </div>
 
         <div className={`${styles.overlay} ${styles.overlayTopLeft}`}>
-          <ScorePanel score={game.score} />
+          <ScorePanel
+            score={game.score}
+            stars={stars}
+            rockMeter={game.rockMeter}
+            starPowerActive={game.starPower.active}
+          />
         </div>
 
         <div className={`${styles.overlay} ${styles.overlayTopRight}`}>
@@ -234,7 +259,7 @@ export function GameScreen({
             subtitle={
               ytLoading
                 ? "Getting the YouTube player ready."
-                : "Tap each note as it reaches the line. (Desktop: A S D F G.)"
+                : "Tap each note as it reaches the line — don't let the rock meter hit empty. Nail the ★ phrases, then tap the bottom meter to unleash Star Power for double points. (Desktop: A S D F G, Enter for Star Power.)"
             }
             actionLabel="Start"
             onAction={start}
@@ -262,15 +287,26 @@ export function GameScreen({
           />
         )}
 
+        {showFailed && (
+          <Splash
+            title="Booed off stage!"
+            subtitle="The rock meter hit empty — too many misses in a row. Shake it off and give the crowd another show."
+            actionLabel="Try again"
+            onAction={restart}
+          />
+        )}
+
         {showFinished && (
           <Results
             scoreText={game.score.score.toLocaleString()}
+            stars={stars}
             maxCombo={game.score.maxCombo}
             accuracy={accuracyPercent(game.score)}
             perfect={game.score.perfect}
             great={game.score.great}
             good={game.score.good}
             miss={game.score.miss}
+            starPhrases={game.starPower.phrasesCompleted}
             onReplay={restart}
           />
         )}
@@ -323,33 +359,50 @@ function Splash({
 
 function Results({
   scoreText,
+  stars,
   maxCombo,
   accuracy,
   perfect,
   great,
   good,
   miss,
+  starPhrases,
   onReplay,
 }: {
   scoreText: string;
+  stars: number;
   maxCombo: number;
   accuracy: number;
   perfect: number;
   great: number;
   good: number;
   miss: number;
+  starPhrases: number;
   onReplay: () => void;
 }): React.JSX.Element {
   return (
     <div className={styles.splash}>
       <div className={styles.splashCard}>
         <h2 className={styles.splashTitle}>Song complete</h2>
+        <div
+          className={styles.resultStars}
+          role="img"
+          aria-label={`${stars} of 5 stars`}
+        >
+          {Array.from({ length: 5 }, (_, i) => (
+            <span key={i} className={i < stars ? styles.starEarned : styles.starEmpty}>
+              ★
+            </span>
+          ))}
+        </div>
         <div className={styles.resultScore}>{scoreText}</div>
         <div className={styles.resultGrid}>
           <span>Accuracy</span>
           <strong>{accuracy.toFixed(1)}%</strong>
           <span>Max combo</span>
           <strong>{maxCombo}</strong>
+          <span>Star phrases</span>
+          <strong>{starPhrases}</strong>
           <span>Perfect</span>
           <strong>{perfect}</strong>
           <span>Great</span>
