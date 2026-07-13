@@ -22,6 +22,8 @@ interface ScorePanelProps {
   rockMeter: number;
   /** Whether star power is blazing (doubles the shown multiplier). */
   starPowerActive: boolean;
+  /** Set while rehearsing: the looping section (and speed), shown as a chip. */
+  practiceLabel?: string;
 }
 
 export function ScorePanel({
@@ -29,6 +31,7 @@ export function ScorePanel({
   stars,
   rockMeter,
   starPowerActive,
+  practiceLabel,
 }: ScorePanelProps): React.JSX.Element {
   const accuracy = accuracyPercent(score);
   const multiplier =
@@ -37,6 +40,9 @@ export function ScorePanel({
 
   return (
     <div className={styles.panel}>
+      {practiceLabel && (
+        <span className={styles.practiceBadge}>PRACTICE · {practiceLabel}</span>
+      )}
       <div className={styles.scoreBlock}>
         <span className={styles.scoreValue}>{score.score.toLocaleString()}</span>
         <span className={styles.scoreLabel}>SCORE</span>

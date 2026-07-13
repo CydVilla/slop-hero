@@ -11,6 +11,19 @@ behind these changes live in [`docs/adr/`](./docs/adr/).
 
 ### Added
 
+- **Practice mode** — Rock Band-style rehearsal: pick one of the chart's
+  8-bar sections (with note counts), loop it with a 2s lead-in, and slow
+  playback to 0.5× or 0.75×. The rock meter still moves but can never boo
+  you off, and practice loops are excluded from metrics and leaderboards.
+  ([ADR-0006](./docs/adr/0006-practice-leaderboards-hold-authoring.md))
+- **Local leaderboards** — a top-5 board per chart + difficulty, stored on
+  your device. The ready screen shows your best; finishing a run shows a
+  NEW BEST banner (with the previous record) and the board with your run
+  highlighted. Only completed runs rank.
+- **Hold authoring in the editor** — the new ▮ brush: tap a note to anchor
+  it, tap a later cell in the same lane to set where the sustain ends, tap
+  the anchor again to revert it to a tap. Tail cells render along the span.
+  Lifts the "taps only" limit of ADR-0003.
 - **HOPO notes (hammer-ons / pull-offs)**, adapted for touch: ring-marked
   notes auto-hit when they cross the line with their lane already held — rest
   or slide a finger (slides never count as stray taps or drop sustains), and

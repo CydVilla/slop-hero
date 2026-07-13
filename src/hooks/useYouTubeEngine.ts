@@ -28,6 +28,7 @@ interface YTPlayer {
   getCurrentTime(): number;
   getDuration(): number;
   setVolume(volume: number): void;
+  setPlaybackRate(rate: number): void;
   destroy(): void;
 }
 
@@ -103,8 +104,10 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
   const [durationMs, setDurationMs] = useState(0);
 
   // Interpolation anchor: time (anchorMs) we believe the song was at, captured
-  // at performance.now()===anchorPerf. While playing, getTimeMs extrapolates.
+  // at performance.now()===anchorPerf. While playing, getTimeMs extrapolates
+  // at the current playback rate (practice mode can slow the video down).
   const anchor = useRef({ anchorMs: 0, anchorPerf: 0, playing: false });
+  const rateRef = useRef(1);
 
   // Whether WE intend the video to be playing. The YouTube IFrame API will start
   // playback on its own in cases we don't want — most notably seekTo() resumes a
@@ -202,7 +205,8 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
       const a = anchor.current;
       if (!p || !a.playing) return;
       const real = p.getCurrentTime() * 1000;
-      const interpolated = a.anchorMs + (performance.now() - a.anchorPerf);
+      const interpolated =
+        a.anchorMs + (performance.now() - a.anchorPerf) * rateRef.current;
       if (Math.abs(interpolated - real) > DRIFT_TOLERANCE_MS) {
         anchor.current = { anchorMs: real, anchorPerf: performance.now(), playing: true };
       }
@@ -213,7 +217,7 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
   const getTimeMs = useCallback((): number => {
     const a = anchor.current;
     if (!a.playing) return a.anchorMs;
-    return a.anchorMs + (performance.now() - a.anchorPerf);
+    return a.anchorMs + (performance.now() - a.anchorPerf) * rateRef.current;
   }, []);
 
   // No-op: the YouTube player is unlocked by its own playVideo() call, which is
@@ -259,6 +263,28 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
     playerRef.current?.setVolume(Math.round(value * 100));
   }, []);
 
+  // Change playback speed (practice mode). Re-anchor at the current position
+  // first so the interpolated clock stays continuous across the rate change;
+  // the drift corrector then tracks the player's actual new pace.
+  const setRate = useCallback(
+    (rate: number): void => {
+      const clamped = Math.min(2, Math.max(0.25, rate));
+      if (clamped === rateRef.current) return;
+      anchor.current = {
+        anchorMs: getTimeMs(),
+        anchorPerf: performance.now(),
+        playing: anchor.current.playing,
+      };
+      rateRef.current = clamped;
+      try {
+        playerRef.current?.setPlaybackRate(clamped);
+      } catch {
+        /* player not ready — the rate applies via rateRef on the next play */
+      }
+    },
+    [getTimeMs],
+  );
+
   // loadFromUrl/loadSilent are part of the interface but unused here — the player
   // self-loads from the video id. Kept as no-ops so the shape matches.
   const loadFromUrl = useCallback(async (): Promise<number> => durationMs, [durationMs]);
@@ -277,8 +303,9 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
       stop,
       getTimeMs,
       setVolume,
+      setRate,
     }),
-    [status, isPlaying, durationMs, loadFromUrl, loadSilent, resume, play, pause, stop, getTimeMs, setVolume],
+    [status, isPlaying, durationMs, loadFromUrl, loadSilent, resume, play, pause, stop, getTimeMs, setVolume, setRate],
   );
 
   return { engine, containerRef };

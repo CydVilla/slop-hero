@@ -291,6 +291,36 @@
   box-shadow: 0 0 8px rgba(253, 224, 71, 0.35);
 }
 
+/* Grid cells covered by a sustain's tail (display, still tappable). */
+.cellTail {
+  color: color-mix(in srgb, var(--lane) 80%, transparent);
+  background: color-mix(in srgb, var(--lane) 14%, transparent);
+  border-color: color-mix(in srgb, var(--lane) 40%, transparent);
+}
+
+/* The note awaiting its sustain-end tap in hold mode. */
+.cellAnchor {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 1px;
+  animation: anchorPulse 0.9s ease-in-out infinite;
+}
+
+@keyframes anchorPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(125, 211, 252, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(125, 211, 252, 0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cellAnchor {
+    animation: none;
+  }
+}
+
 /* ---- actions ---- */
 
 .actions {

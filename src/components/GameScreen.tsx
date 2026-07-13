@@ -22,15 +22,23 @@ import { GameCanvas } from "./GameCanvas";
 import { ScorePanel } from "./ScorePanel";
 import styles from "./GameScreen.module.css";
 
-import { KEYBOARD_LANE_MAP } from "@/game/constants";
+import { KEYBOARD_LANE_MAP, PRACTICE } from "@/game/constants";
 import { chartDurationMs } from "@/game/chartUtils";
 import { ensureHopos } from "@/game/hopo";
+import { chartSections, type PracticeSection } from "@/game/practice";
 import { accuracyPercent, baseChartScore, isComplete, starRating } from "@/game/scoring";
 import { ensureStarPhrases } from "@/game/starPower";
 import type { RhythmChart } from "@/game/types";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import { useRhythmGame } from "@/hooks/useRhythmGame";
 import { useYouTubeEngine } from "@/hooks/useYouTubeEngine";
+import {
+  bestScore,
+  chartScoreKey,
+  submitScore,
+  type LocalScoreEntry,
+  type SubmitResult,
+} from "@/lib/localScores";
 import { recordSession } from "@/lib/metrics/client";
 import type { SessionMeta } from "@/lib/activeSong";
 
@@ -80,9 +88,30 @@ export function GameScreen({
     togglePause,
     start,
     restart,
+    startPractice,
+    exitPractice,
     activateStarPower,
   } = game;
   const stars = starRating(game.score.score, baseScore);
+  const inPractice = game.practice !== null;
+
+  // Practice mode: the chart's rehearsal sections + the player's picks.
+  const sections = useMemo(() => chartSections(chart), [chart]);
+  const [practiceOpen, setPracticeOpen] = useState(false);
+  const [sectionPick, setSectionPick] = useState(0);
+  const [speedPick, setSpeedPick] = useState<number>(1);
+
+  // Local leaderboard identity: track + difficulty, stable across replays.
+  const scoreKey = chartScoreKey(
+    sessionMeta?.trackId ?? chart.id,
+    sessionMeta?.difficulty ?? chart.difficulty,
+  );
+  const [best, setBest] = useState<LocalScoreEntry | null>(null);
+  const [placing, setPlacing] = useState<SubmitResult | null>(null);
+  useEffect(() => {
+    setBest(bestScore(scoreKey));
+    setPlacing(null);
+  }, [scoreKey]);
 
   const [debug, setDebug] = useState({ song: 0, chart: 0 });
 
@@ -173,7 +202,22 @@ export function GameScreen({
     if (game.phase === "finished" || game.phase === "failed") {
       if (recordedRef.current) return;
       recordedRef.current = true;
+      // Practice loops are rehearsal — never recorded, never ranked.
+      if (game.practice) return;
       const score = game.score;
+      // Completed runs go on the device's leaderboard for this chart.
+      if (game.phase === "finished") {
+        const result = submitScore(scoreKey, {
+          score: score.score,
+          stars: starRating(score.score, baseScore),
+          accuracy: accuracyPercent(score),
+          maxCombo: score.maxCombo,
+          completed: isComplete(score),
+          at: new Date().toISOString(),
+        });
+        setPlacing(result);
+        setBest(result.board[0] ?? null);
+      }
       recordSession({
         chartId: sessionMeta?.trackId ?? chart.id,
         title,
@@ -196,7 +240,17 @@ export function GameScreen({
     } else if (game.phase === "countdown" || game.phase === "playing") {
       recordedRef.current = false;
     }
-  }, [game.phase, game.score, game.calibrationOffsetMs, chart, title, sessionMeta]);
+  }, [
+    game.phase,
+    game.score,
+    game.practice,
+    game.calibrationOffsetMs,
+    chart,
+    title,
+    sessionMeta,
+    scoreKey,
+    baseScore,
+  ]);
 
   const showStart = game.phase === "idle";
   const showCountdown = game.phase === "countdown";
@@ -261,6 +315,11 @@ export function GameScreen({
             stars={stars}
             rockMeter={game.rockMeter}
             starPowerActive={game.starPower.active}
+            practiceLabel={
+              game.practice
+                ? `${game.practice.label}${speedPick !== 1 ? ` · ${speedPick}×` : ""}`
+                : undefined
+            }
           />
         </div>
 
@@ -274,7 +333,25 @@ export function GameScreen({
           />
         </div>
 
-        {showStart && (
+        {showStart && practiceOpen && (
+          <PracticePicker
+            sections={sections}
+            sectionPick={sectionPick}
+            onPickSection={setSectionPick}
+            speedPick={speedPick}
+            onPickSpeed={setSpeedPick}
+            onStart={() => {
+              const section = sections[Math.min(sectionPick, sections.length - 1)];
+              if (section) {
+                setPracticeOpen(false);
+                startPractice(section, speedPick);
+              }
+            }}
+            onBack={() => setPracticeOpen(false)}
+          />
+        )}
+
+        {showStart && !practiceOpen && (
           <Splash
             title={ytLoading ? "Loading video…" : "Ready?"}
             subtitle={
@@ -284,7 +361,20 @@ export function GameScreen({
             }
             actionLabel="Start"
             onAction={start}
+            secondaryLabel={sections.length > 0 ? "Practice" : undefined}
+            onSecondary={sections.length > 0 ? () => setPracticeOpen(true) : undefined}
             disabled={ytLoading}
+            extra={
+              best ? (
+                <p className={styles.bestLine}>
+                  Best on this device:{" "}
+                  <strong>{best.score.toLocaleString()}</strong>
+                  {" · "}
+                  {"★".repeat(best.stars)}
+                  {"☆".repeat(5 - best.stars)}
+                </p>
+              ) : undefined
+            }
           />
         )}
 
@@ -299,12 +389,18 @@ export function GameScreen({
 
         {showPaused && (
           <Splash
-            title="Paused"
-            subtitle="Take a breath."
+            title={inPractice ? "Practice paused" : "Paused"}
+            subtitle={
+              inPractice
+                ? `Looping ${game.practice?.label ?? "section"} — no fail, no pressure.`
+                : "Take a breath."
+            }
             actionLabel="Resume"
             onAction={togglePause}
-            secondaryLabel="Restart"
+            secondaryLabel={inPractice ? "Restart loop" : "Restart"}
             onSecondary={restart}
+            tertiaryLabel={inPractice ? "Exit practice" : undefined}
+            onTertiary={inPractice ? exitPractice : undefined}
           />
         )}
 
@@ -328,6 +424,7 @@ export function GameScreen({
             good={game.score.good}
             miss={game.score.miss}
             starPhrases={game.starPower.phrasesCompleted}
+            placing={placing}
             onReplay={restart}
           />
         )}
@@ -343,7 +440,10 @@ function Splash({
   onAction,
   secondaryLabel,
   onSecondary,
+  tertiaryLabel,
+  onTertiary,
   disabled,
+  extra,
 }: {
   title: string;
   subtitle: string;
@@ -351,13 +451,17 @@ function Splash({
   onAction: () => void;
   secondaryLabel?: string;
   onSecondary?: () => void;
+  tertiaryLabel?: string;
+  onTertiary?: () => void;
   disabled?: boolean;
+  extra?: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div className={styles.splash}>
       <div className={styles.splashCard}>
         <h2 className={styles.splashTitle}>{title}</h2>
         <p className={styles.splashSubtitle}>{subtitle}</p>
+        {extra}
         <div className={styles.splashActions}>
           <button
             type="button"
@@ -372,6 +476,79 @@ function Splash({
               {secondaryLabel}
             </button>
           )}
+          {tertiaryLabel && onTertiary && (
+            <button type="button" className={styles.secondaryBtn} onClick={onTertiary}>
+              {tertiaryLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Practice setup card: pick one of the chart's sections and a playback speed,
+ * then loop it. Sections are 8 bars (or ~15s without a tempo); empty ones are
+ * already filtered out.
+ */
+function PracticePicker({
+  sections,
+  sectionPick,
+  onPickSection,
+  speedPick,
+  onPickSpeed,
+  onStart,
+  onBack,
+}: {
+  sections: PracticeSection[];
+  sectionPick: number;
+  onPickSection: (index: number) => void;
+  speedPick: number;
+  onPickSpeed: (speed: number) => void;
+  onStart: () => void;
+  onBack: () => void;
+}): React.JSX.Element {
+  return (
+    <div className={styles.splash}>
+      <div className={styles.splashCard}>
+        <h2 className={styles.splashTitle}>Practice mode</h2>
+        <p className={styles.splashSubtitle}>
+          Loop one section until it sticks — the crowd can&apos;t boo you off, and
+          you can slow the song down while you learn it.
+        </p>
+        <div className={styles.practiceSections} role="group" aria-label="Section">
+          {sections.map((s, i) => (
+            <button
+              key={s.index}
+              type="button"
+              className={`${styles.practiceChip} ${i === sectionPick ? styles.practiceChipActive : ""}`}
+              onClick={() => onPickSection(i)}
+            >
+              <span>{s.label}</span>
+              <em>{s.noteCount} notes</em>
+            </button>
+          ))}
+        </div>
+        <div className={styles.practiceSpeeds} role="group" aria-label="Speed">
+          {PRACTICE.speeds.map((speed) => (
+            <button
+              key={speed}
+              type="button"
+              className={`${styles.practiceChip} ${speed === speedPick ? styles.practiceChipActive : ""}`}
+              onClick={() => onPickSpeed(speed)}
+            >
+              {speed === 1 ? "Full speed" : `${speed}×`}
+            </button>
+          ))}
+        </div>
+        <div className={styles.splashActions}>
+          <button type="button" className={styles.primaryBtn} onClick={onStart}>
+            Start practicing
+          </button>
+          <button type="button" className={styles.secondaryBtn} onClick={onBack}>
+            Back
+          </button>
         </div>
       </div>
     </div>
@@ -388,6 +565,7 @@ function Results({
   good,
   miss,
   starPhrases,
+  placing,
   onReplay,
 }: {
   scoreText: string;
@@ -399,12 +577,21 @@ function Results({
   good: number;
   miss: number;
   starPhrases: number;
+  placing: SubmitResult | null;
   onReplay: () => void;
 }): React.JSX.Element {
   return (
     <div className={styles.splash}>
       <div className={styles.splashCard}>
         <h2 className={styles.splashTitle}>Song complete</h2>
+        {placing?.isNewBest && (
+          <p className={styles.newBest} role="status">
+            ★ NEW BEST ON THIS DEVICE ★
+            {placing.previousBest !== null && (
+              <em> previous: {placing.previousBest.toLocaleString()}</em>
+            )}
+          </p>
+        )}
         <div
           className={styles.resultStars}
           role="img"
@@ -433,6 +620,24 @@ function Results({
           <span>Miss</span>
           <strong>{miss}</strong>
         </div>
+        {placing && placing.board.length > 0 && (
+          <div className={styles.board}>
+            <span className={styles.boardTitle}>Top scores on this device</span>
+            <ol className={styles.boardList}>
+              {placing.board.map((entry, i) => (
+                <li
+                  key={`${entry.at}-${entry.score}`}
+                  className={placing.rank === i + 1 ? styles.boardRowMine : undefined}
+                >
+                  <span>{entry.score.toLocaleString()}</span>
+                  <em>
+                    {"★".repeat(entry.stars)} · {entry.accuracy.toFixed(0)}%
+                  </em>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
         <div className={styles.splashActions}>
           <button type="button" className={styles.primaryBtn} onClick={onReplay}>
             Play again

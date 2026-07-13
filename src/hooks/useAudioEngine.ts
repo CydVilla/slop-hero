@@ -44,6 +44,12 @@ export interface AudioEngine {
   /** Current playback position in ms. Safe to call every animation frame. */
   getTimeMs: () => number;
   setVolume: (value: number) => void;
+  /**
+   * Playback speed (1 = normal). Song position advances at this rate, so the
+   * whole game — note travel, judging, everything driven by getTimeMs —
+   * slows/speeds with it. Used by practice mode. Pitch shifts with rate.
+   */
+  setRate: (rate: number) => void;
 }
 
 interface InternalState {
@@ -61,6 +67,8 @@ interface InternalState {
   durationMs: number;
   /** True when running without a real buffer (demo mode). */
   silent: boolean;
+  /** Playback rate (1 = normal); the clock advances at this rate. */
+  rate: number;
 }
 
 function getOrCreateContext(state: InternalState): AudioContext {
@@ -88,6 +96,7 @@ export function useAudioEngine(): AudioEngine {
     pausedAtMs: 0,
     durationMs: 0,
     silent: false,
+    rate: 1,
   });
 
   const [status, setStatus] = useState<AudioEngineStatus>("empty");
@@ -98,7 +107,7 @@ export function useAudioEngine(): AudioEngine {
     const s = ref.current;
     if (!s.playing || !s.ctx) return s.pausedAtMs;
     const elapsedMs = (s.ctx.currentTime - s.startedAtCtx) * 1000;
-    const pos = s.startOffsetMs + elapsedMs;
+    const pos = s.startOffsetMs + elapsedMs * s.rate;
     // Clamp at duration so we never report past the end.
     return s.durationMs > 0 ? Math.min(pos, s.durationMs) : pos;
   }, []);
@@ -179,6 +188,7 @@ export function useAudioEngine(): AudioEngine {
       if (!s.silent && s.buffer && s.gain) {
         const source = ctx.createBufferSource();
         source.buffer = s.buffer;
+        source.playbackRate.value = s.rate;
         source.connect(s.gain);
         source.onended = () => {
           // Only treat as natural end if we're still nominally playing.
@@ -224,6 +234,25 @@ export function useAudioEngine(): AudioEngine {
     }
   }, []);
 
+  // Change playback speed. Re-anchors the clock at the current position first
+  // so getTimeMs stays continuous, then retunes the live source (if any).
+  const setRate = useCallback(
+    (rate: number) => {
+      const s = ref.current;
+      const clamped = Math.min(2, Math.max(0.25, rate));
+      if (clamped === s.rate) return;
+      if (s.playing && s.ctx) {
+        s.startOffsetMs = getTimeMs();
+        s.startedAtCtx = s.ctx.currentTime;
+      }
+      s.rate = clamped;
+      if (s.source && s.ctx) {
+        s.source.playbackRate.setValueAtTime(clamped, s.ctx.currentTime);
+      }
+    },
+    [getTimeMs],
+  );
+
   // Tear down the AudioContext on unmount to avoid leaking audio nodes.
   useEffect(() => {
     const stateRef = ref;
@@ -259,6 +288,7 @@ export function useAudioEngine(): AudioEngine {
       stop,
       getTimeMs,
       setVolume,
+      setRate,
     }),
     [
       status,
@@ -272,6 +302,7 @@ export function useAudioEngine(): AudioEngine {
       stop,
       getTimeMs,
       setVolume,
+      setRate,
     ],
   );
 }

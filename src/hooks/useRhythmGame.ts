@@ -59,6 +59,12 @@ import {
   starPowerScoreMultiplier,
   tickStarPower,
 } from "@/game/starPower";
+import {
+  practiceLoopEnded,
+  practicePlayFromMs,
+  practiceRuntime,
+  type PracticeSection,
+} from "@/game/practice";
 import { playMissBuzz } from "@/lib/sfx";
 import type {
   ChartNote,
@@ -85,6 +91,8 @@ export interface GameAudioControls {
   pause: () => void;
   stop: () => void;
   getTimeMs: () => number;
+  /** Playback speed (1 = normal); optional — practice slow-down needs it. */
+  setRate?: (rate: number) => void;
 }
 
 export interface RhythmGame {
@@ -104,6 +112,12 @@ export interface RhythmGame {
   starPower: StarPowerState;
   /** Rock meter 0..1 — hits push it up, misses drag it down; empty = failed. */
   rockMeter: number;
+  /**
+   * Active practice section, or null in normal play. While practicing the
+   * chosen section loops with a lead-in, the rock meter cannot fail the run,
+   * and playback may be slowed — a rehearsal, not a scored performance.
+   */
+  practice: PracticeSection | null;
   /** Refs consumed by the renderer (do not read in JSX render path). */
   runtimeRef: React.RefObject<Map<string, NoteRuntimeState>>;
   feedbackRef: React.RefObject<HitFeedback[]>;
@@ -121,6 +135,10 @@ export interface RhythmGame {
   start: () => void;
   togglePause: () => void;
   restart: () => void;
+  /** Enter practice mode: loop `section` at `speed` (0.5/0.75/1). */
+  startPractice: (section: PracticeSection, speed: number) => void;
+  /** Leave practice mode and return to the normal ready screen at full speed. */
+  exitPractice: () => void;
   /**
    * Press a lane (finger/key down). Judges the note at the hit line and, if it
    * is a sustain, begins holding its tail.
@@ -192,6 +210,7 @@ export function useRhythmGame(
   // written through commitStarPower/commitRockMeter on discrete events only.
   const [starPower, setStarPower] = useState<StarPowerState>(createStarPower);
   const [rockMeter, setRockMeter] = useState<number>(createRockMeter);
+  const [practice, setPracticeState] = useState<PracticeSection | null>(null);
 
   // Pending interval id for the pre-song countdown, so we can cancel it if the
   // player restarts/pauses mid-count or the component unmounts.
@@ -229,6 +248,9 @@ export function useRhythmGame(
   const whammyAtRef = useRef<Map<string, number>>(new Map());
   // Previous update() timestamp, for integrating the whammy trickle.
   const lastUpdateMsRef = useRef(0);
+  // Practice mode: the looping section (null = normal play) + playback speed.
+  const practiceRef = useRef<PracticeSection | null>(null);
+  const speedRef = useRef(1);
 
   // Mirror values that tap/update read at high frequency to avoid stale closures.
   const phaseRef = useRef<GamePhase>("idle");
@@ -266,6 +288,9 @@ export function useRhythmGame(
     // wiping it would blind HOPO auto-hits until the player re-pressed.
     whammyAtRef.current.clear();
     lastUpdateMsRef.current = 0;
+    practiceRef.current = null;
+    setPracticeState(null);
+    speedRef.current = 1;
     durationRef.current = chartDurationMs(chart);
     setScore(createInitialScore(chart.notes.length));
     starPowerRef.current = createStarPower();
@@ -322,7 +347,17 @@ export function useRhythmGame(
   );
 
   const resetGameState = useCallback(() => {
-    runtimeRef.current = createRuntimeState(chart);
+    // In practice mode only the chosen section is in play: everything outside
+    // it starts pre-resolved (never drawn, never missed, not counted).
+    const section = practiceRef.current;
+    if (section) {
+      const { runtime, inSectionCount } = practiceRuntime(chart.notes, section);
+      runtimeRef.current = runtime;
+      setScore(createInitialScore(inSectionCount));
+    } else {
+      runtimeRef.current = createRuntimeState(chart);
+      setScore(createInitialScore(chart.notes.length));
+    }
     notesByIdRef.current = notesById(chart);
     sortedNotesRef.current = sortNotes(chart.notes);
     missCursorRef.current = 0;
@@ -333,7 +368,6 @@ export function useRhythmGame(
     // heldLanesRef intentionally survives (physical input state; see above).
     whammyAtRef.current.clear();
     lastUpdateMsRef.current = 0;
-    setScore(createInitialScore(chart.notes.length));
     commitStarPower(createStarPower());
     commitRockMeter(createRockMeter());
   }, [chart, commitStarPower, commitRockMeter]);
@@ -361,7 +395,11 @@ export function useRhythmGame(
         clearCountdownTimer();
         setCountdown(0);
         setPhase("playing");
-        void audio.play(0);
+        // Practice starts just before its section (lead-in) at the chosen
+        // speed; normal play always starts from the top at full speed.
+        const section = practiceRef.current;
+        audio.setRate?.(section ? speedRef.current : 1);
+        void audio.play(section ? practicePlayFromMs(section) : 0);
       } else {
         setCountdown(remaining);
       }
@@ -371,6 +409,43 @@ export function useRhythmGame(
   const start = useCallback(() => {
     beginCountdown();
   }, [beginCountdown]);
+
+  // Wrap the practice loop around: fresh section runtime + score, seek back to
+  // the lead-in, keep playing. No countdown between loops — rehearsal flow.
+  const loopPractice = useCallback(() => {
+    const section = practiceRef.current;
+    if (!section) return;
+    const { runtime, inSectionCount } = practiceRuntime(chart.notes, section);
+    runtimeRef.current = runtime;
+    missCursorRef.current = 0;
+    activeHoldsRef.current.clear();
+    whammyAtRef.current.clear();
+    lastUpdateMsRef.current = 0;
+    setScore(createInitialScore(inSectionCount));
+    void audio.play(practicePlayFromMs(section));
+  }, [chart, audio]);
+
+  const startPractice = useCallback(
+    (section: PracticeSection, speed: number) => {
+      practiceRef.current = section;
+      setPracticeState(section);
+      speedRef.current = speed;
+      beginCountdown();
+    },
+    [beginCountdown],
+  );
+
+  const exitPractice = useCallback(() => {
+    clearCountdownTimer();
+    practiceRef.current = null;
+    setPracticeState(null);
+    speedRef.current = 1;
+    audio.setRate?.(1);
+    audio.stop();
+    resetGameState();
+    setCountdown(0);
+    setPhase("idle");
+  }, [audio, clearCountdownTimer, resetGameState]);
 
   const restart = useCallback(() => {
     beginCountdown();
@@ -553,6 +628,13 @@ export function useRhythmGame(
     (songTimeMs: number) => {
       if (phaseRef.current !== "playing") return;
 
+      // Practice: once the section (plus a beat for the last note to resolve)
+      // has played out, wrap the loop and start the pass over.
+      if (practiceRef.current && practiceLoopEnded(practiceRef.current, songTimeMs)) {
+        loopPractice();
+        return;
+      }
+
       // Frame delta for time-integrated effects (whammy). Clamped so a pause,
       // seek, or tab-switch hiccup can't dump a huge lump of meter at once.
       const deltaMs = clampDelta(songTimeMs - lastUpdateMsRef.current);
@@ -599,8 +681,9 @@ export function useRhythmGame(
         commitRockMeter(meter);
         playMissBuzz();
 
-        // The crowd has had enough — booed off the stage, run over.
-        if (isRockMeterFailed(meter)) {
+        // The crowd has had enough — booed off the stage, run over. Practice
+        // is a rehearsal: the meter still moves but can never end the run.
+        if (!practiceRef.current && isRockMeterFailed(meter)) {
           setPhase("failed");
           audio.stop();
           return;
@@ -692,12 +775,17 @@ export function useRhythmGame(
       }
 
       // End the run once the song is over (covers trailing silence too).
-      if (durationRef.current > 0 && songTimeMs >= durationRef.current + 250) {
+      // Practice never "finishes" — the loop check above wraps it instead.
+      if (
+        !practiceRef.current &&
+        durationRef.current > 0 &&
+        songTimeMs >= durationRef.current + 250
+      ) {
         setPhase("finished");
         audio.stop();
       }
     },
-    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, applyJudgedHit, commitRockMeter, commitStarPower],
+    [audio, chart.offsetMs, pushFeedback, activeHoldNotes, applyJudgedHit, commitRockMeter, commitStarPower, loopPractice],
   );
 
   // Finish as soon as every note has been judged — but not while a hold's tail
@@ -708,6 +796,9 @@ export function useRhythmGame(
   // tail), so the finish just waits one beat for the last sustain to land.
   useEffect(() => {
     if (phase !== "playing" || !isComplete(score)) return;
+    // Practice loops on regardless of completion — clearing the section is
+    // the point, not a reason to stop rehearsing.
+    if (practiceRef.current) return;
     for (const state of runtimeRef.current.values()) {
       if (state.hold === "holding") return;
     }
@@ -740,6 +831,7 @@ export function useRhythmGame(
       calibrationOffsetMs,
       starPower,
       rockMeter,
+      practice,
       runtimeRef,
       feedbackRef,
       laneFlashRef,
@@ -749,6 +841,8 @@ export function useRhythmGame(
       start,
       togglePause,
       restart,
+      startPractice,
+      exitPractice,
       pressLane,
       releaseLane,
       holdLane,
@@ -766,11 +860,14 @@ export function useRhythmGame(
       calibrationOffsetMs,
       starPower,
       rockMeter,
+      practice,
       getCalibrationOffsetMs,
       activateStarPower,
       start,
       togglePause,
       restart,
+      startPractice,
+      exitPractice,
       pressLane,
       releaseLane,
       holdLane,
