@@ -50,6 +50,13 @@ RhythmChart // see src/game/types.ts
 Keeping this contract stable means we can swap the generator (client grid →
 server ML) without touching gameplay, scoring, or rendering.
 
+Generators don't need to emit star-power phrases: any chart whose notes have
+no `starPhrase` gets deterministic phrases auto-marked at play time
+(`ensureStarPhrases`, see
+[ADR-0004](./adr/0004-guitar-feel-gameplay.md)). A future generator *may* set
+`starPhrase` itself (e.g. to star the most interesting sections) and the game
+will use those instead.
+
 ## Pipeline
 
 ```

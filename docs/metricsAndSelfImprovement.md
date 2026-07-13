@@ -19,7 +19,11 @@ goes, how it's turned into decisions, and how those decisions ship safely.
 ## 1. What is collected
 
 One event per finished play-through (`PlaySessionEvent` in
-`src/lib/metrics/types.ts`):
+`src/lib/metrics/types.ts`). "Finished" includes **failed** runs — since the
+rock meter can boo a player off stage
+([ADR-0004](./adr/0004-guitar-feel-gameplay.md)), a failed run records
+the same event with `completed: false`, so the tuning loop sees charts that
+are hard enough to fail (previously an abandoned run left no trace):
 
 - Chart identity: `chartId`, `title`, `artist`, `difficulty`, `source`, `bpm`.
 - Result: `score`, `maxCombo`, `accuracy`, per-rating counts, `totalNotes`,

@@ -7,7 +7,7 @@ The project doesn't cut versioned releases — every merge to `main` deploys —
 so entries are grouped by date instead of version. Architectural decisions
 behind these changes live in [`docs/adr/`](./docs/adr/).
 
-## Unreleased
+## 2026-07-13
 
 ### Added
 
@@ -18,6 +18,7 @@ behind these changes live in [`docs/adr/`](./docs/adr/).
   tap the on-highway meter (or press Enter/Shift) to double all scoring while
   it drains — up to ×8 stacked with the combo multiplier. Activating floods
   the highway electric blue, and completing phrases mid-run extends it.
+  ([ADR-0004](./docs/adr/0004-guitar-feel-gameplay.md))
 - **Rock meter with song fail** — the classic crowd gauge. Hits nudge it up,
   misses drag it down about twice as hard (star power halves the sting), and
   an empty gauge boos you off the stage: the song stops, a fail screen offers
@@ -33,6 +34,17 @@ behind these changes live in [`docs/adr/`](./docs/adr/).
 - **Miss fret-buzz** — missing a note (or dropping a sustain) plays a short
   synthesized muted-string flub, so misses sting audibly in every playback
   mode (uploaded audio, YouTube, silent).
+
+### Docs
+
+- [ADR-0004](./docs/adr/0004-guitar-feel-gameplay.md) records the gameplay
+  decisions above; README (features, how-to-play, architecture) and the Clone
+  Hero import doc updated to match.
+
+## 2026-07-06
+
+### Added
+
 - **Persistent song library** — songs you upload, import from Clone Hero, or
   pick from YouTube search are now saved on your device (IndexedDB, audio
   included) and restored into the catalog on every visit. No more re-uploading
@@ -59,11 +71,6 @@ behind these changes live in [`docs/adr/`](./docs/adr/).
 
 - Catalog and upload copy now explain local persistence and the community
   section.
-
-## 2026-07-06
-
-### Changed
-
 - Deployment docs migrated from Heroku to the real setup: **Vercel + Neon
   Postgres** (`DATABASE_URL` via the Neon integration). Removed the unused
   `Procfile`.
