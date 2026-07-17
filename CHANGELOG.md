@@ -7,6 +7,18 @@ The project doesn't cut versioned releases — every merge to `main` deploys —
 so entries are grouped by date instead of version. Architectural decisions
 behind these changes live in [`docs/adr/`](./docs/adr/).
 
+## 2026-07-17
+
+### Docs
+
+- `SELF_IMPROVE_TOKEN` is now documented as a **fine-grained PAT**: scoped to
+  this repo only, with just Contents + Pull requests (read/write) — replacing
+  the old "classic PAT with `repo` scope" guidance. The metrics doc gained a
+  step-by-step "Creating `SELF_IMPROVE_TOKEN`" section (settings table,
+  what's deliberately not needed, verification via a manual workflow
+  dispatch, and the silent-fallback symptom when the token expires); both
+  bot workflows' comments point at it.
+
 ## 2026-07-13
 
 ### Added

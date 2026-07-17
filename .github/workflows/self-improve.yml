@@ -12,9 +12,12 @@ name: Self-improve (auto-tune)
 #   - Add a repo variable or secret METRICS_ENDPOINT = https://your-deployment
 #     (the URL where /api/metrics/insights is reachable). Without it the job
 #     no-ops. Alternatively set METRICS_FILE to a committed fixtures path.
-#   - Optional: add a SELF_IMPROVE_TOKEN secret (a PAT with repo scope) so the
-#     opened PR triggers CI. PRs opened with the default GITHUB_TOKEN do not
-#     trigger other workflows.
+#   - Optional: add a SELF_IMPROVE_TOKEN secret so the opened PR triggers CI
+#     (PRs opened with the default GITHUB_TOKEN do not trigger other
+#     workflows). Use a FINE-GRAINED PAT scoped to this repo only with just
+#     Contents: read/write + Pull requests: read/write — nothing else. Full
+#     setup + renewal notes: docs/metricsAndSelfImprovement.md
+#     ("Creating SELF_IMPROVE_TOKEN").
 
 on:
   schedule:

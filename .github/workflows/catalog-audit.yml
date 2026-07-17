@@ -12,8 +12,10 @@ name: Catalog audit
 #
 # The PR is meant for normal human review + merge (no auto-merge). Note that a
 # PR opened with the default GITHUB_TOKEN does not trigger the CI workflow; set
-# the SELF_IMPROVE_TOKEN secret (same one the self-improve loop uses) if you
-# want CI checks to appear on these PRs too.
+# the SELF_IMPROVE_TOKEN secret (same one the self-improve loop uses — a
+# fine-grained PAT scoped to this repo with Contents + Pull requests
+# read/write; see docs/metricsAndSelfImprovement.md, "Creating
+# SELF_IMPROVE_TOKEN") if you want CI checks to appear on these PRs too.
 
 on:
   schedule:

@@ -117,9 +117,45 @@ a bad tune can't land unreviewed.
    deployed base URL (e.g. `https://your-app.vercel.app`). The workflow
    fetches `${METRICS_ENDPOINT}/api/metrics/insights`. For a dry run without a
    deployment, set `METRICS_FILE` to a committed fixtures path instead.
-3. Optional: add a `SELF_IMPROVE_TOKEN` **secret** — a PAT with `repo` scope — so
-   the opened PR triggers CI (PRs opened with the default `GITHUB_TOKEN` don't
-   trigger other workflows).
+3. Optional but recommended: add a `SELF_IMPROVE_TOKEN` **secret** (a
+   fine-grained personal access token — see below) so the opened PR triggers
+   CI. PRs opened with the default `GITHUB_TOKEN` don't trigger other
+   workflows, and CI is the safety gate on tuning changes — without the token
+   the loop still opens PRs, but they arrive with no checks on them.
+
+### Creating `SELF_IMPROVE_TOKEN` (fine-grained PAT)
+
+The token is used in exactly one way — by `peter-evans/create-pull-request`
+in the **self-improve** and **catalog-audit** workflows — to push a bot
+branch and open/label a PR. That needs only two repository permissions.
+
+GitHub → Settings → Developer settings → Personal access tokens →
+**Fine-grained tokens** → Generate new token:
+
+| Setting | Value |
+|---------|-------|
+| Token name | e.g. `slop-hero-self-improve` |
+| Resource owner | the account that should author the bot PRs |
+| Repository access | **Only select repositories** → this repo |
+| **Contents** | **Read and write** (push `auto/*` branches, delete after merge) |
+| **Pull requests** | **Read and write** (open/update the PR, apply labels) |
+| Everything else | No access (*Metadata: Read* is added automatically) |
+| Expiration | 6–12 months — set a reminder (see below) |
+
+Notably **not** needed: Workflows (the bot PRs only touch
+`src/game/tuning.json`, `docs/metrics/latest-report.md`, and
+`src/data/unavailableTracks.json` — never workflow files), Issues, Actions,
+or any account-level permission.
+
+Install it at repo → Settings → Secrets and variables → Actions →
+**Secrets** → `SELF_IMPROVE_TOKEN` (it must be a secret, not a variable).
+Verify by dispatching the **Self-improve (auto-tune)** workflow manually: if
+a change is recommended, the opened PR should show **Typecheck & build**
+running on it.
+
+When the token **expires**, nothing fails loudly — the workflows fall back
+to `GITHUB_TOKEN`, so the symptom is bot PRs whose CI never runs. If you see
+that, regenerate the token and update the secret.
 
 Run it locally against fixtures:
 
@@ -166,7 +202,7 @@ No secrets need to be committed to the repo.
 | Name | Where | Purpose |
 |------|-------|---------|
 | `METRICS_ENDPOINT` | variable or secret | Base URL of the deployed app |
-| `SELF_IMPROVE_TOKEN` | secret (optional) | PAT so auto-tune PRs trigger CI |
+| `SELF_IMPROVE_TOKEN` | secret (optional) | Fine-grained PAT (Contents + Pull requests, RW, this repo only — see [Creating `SELF_IMPROVE_TOKEN`](#creating-self_improve_token-fine-grained-pat)) so bot PRs trigger CI |
 | `METRICS_FILE` | variable (optional) | Fixtures path for dry runs |
 
 ### Local vs production storage
