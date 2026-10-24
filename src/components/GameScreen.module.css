@@ -4,6 +4,12 @@
   flex-direction: column;
   overflow: hidden;
   background: linear-gradient(180deg, #0a0d18, #05060a);
+  /* Holds are long-presses: on iOS a long-press would otherwise start a text
+     selection, pop the callout menu, or flash the tap highlight mid-song. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .header {
@@ -87,6 +93,22 @@
 .overlayTopRight {
   top: 12px;
   right: 12px;
+}
+
+/* Half-folded foldable (iPhone Duo book / tabletop posture): the HUD gets the
+   half of the screen the highway doesn't use. Position comes inline from the
+   fold layout. */
+.hudPane {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 /* The note highway sits on its own layer above the (optional) video backdrop. */
@@ -196,12 +218,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
   background: rgba(5, 6, 10, 0.72);
   backdrop-filter: blur(6px);
 }
 
+/* max-height + scroll: on short landscape screens (the iPhone Duo open is
+   ~626px tall before Safari's toolbars) the results card is taller than the
+   stage and would otherwise be clipped with its buttons out of reach. */
 .splashCard {
-  width: min(440px, 90vw);
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
   padding: 32px;
   border-radius: 22px;
   background: rgba(18, 22, 38, 0.92);
@@ -211,6 +239,11 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Scroll the card instead of squashing its contents. */
+.splashCard > * {
+  flex-shrink: 0;
 }
 
 .splashTitle {
@@ -443,5 +476,30 @@
   }
   .titleGroup {
     display: none;
+  }
+}
+
+/* Short landscape screens (phones on their side, the iPhone Duo unfolded):
+   reclaim vertical space for the highway. */
+@media (max-height: 560px) {
+  .header {
+    height: 44px;
+  }
+  .overlay {
+    transform: scale(0.78);
+    transform-origin: top var(--corner, left);
+  }
+  .overlayTopRight {
+    --corner: right;
+  }
+  .splashCard {
+    padding: 20px;
+    gap: 10px;
+  }
+  .splashTitle {
+    font-size: 24px;
+  }
+  .resultScore {
+    font-size: 36px;
   }
 }

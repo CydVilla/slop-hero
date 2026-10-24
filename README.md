@@ -1,9 +1,10 @@
 # Slop Hero 🎵
 
-A touchscreen rhythm game for the **Tesla in-car browser**. It is a Clone Hero /
-Rock Band–style game adapted for a large touchscreen: **tap-only**, five big
-lanes, a vertical falling-note highway, and a hit zone at the bottom. Upload any
-song and get an instantly playable chart.
+A touchscreen rhythm game for the **Tesla in-car browser**, and now also
+phones and foldables like the **iPhone Duo**. It is a Clone Hero / Rock
+Band–style game adapted for a large touchscreen: **tap-only**, five big lanes,
+a vertical falling-note highway, and a hit zone at the bottom. Upload any song
+and get an instantly playable chart.
 
 Open source under the [MIT License](./LICENSE) — contributions (especially new
 catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
@@ -68,6 +69,12 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 - 🎚️ Calibration offset control for audio/input sync (−10 / +10 / reset).
 - 🖱️⌨️📱 Mouse, touch (Pointer Events), and keyboard (A/S/D/F/G, Space,
   Enter/Shift for star power).
+- 📖 **iPhone Duo / foldables**: half-fold the screen like a book and the
+  highway moves onto one side of the hinge, with the HUD on the other. In
+  tabletop posture the highway goes on the flat bottom half. Folding,
+  unfolding, or rotating mid-song auto-pauses. On any iPhone, songs play even
+  with the silent switch on. See
+  [`docs/iphoneDuoSupport.md`](./docs/iphoneDuoSupport.md).
 - 📊 **Metrics dashboard** (`/dashboard`) — anonymous, gameplay-only telemetry
   (accuracy, miss rates, calibration, per-track stats) with an "all players" vs
   "this device" view and privacy controls (opt-out / clear).
@@ -311,6 +318,7 @@ src/
     useAudioEngine.ts  # Web Audio wrapper = the clock + playback
     useYouTubeEngine.ts # YouTube IFrame player as the clock, same interface
     useRhythmGame.ts   # orchestrates rules + React state transitions
+    useFoldLayout.ts   # foldables: viewport segments + posture → stage split
   lib/
     activeSong.ts      # in-memory hand-off between routes → /play
     analyzeClient.ts   # decode + drive the analysis worker (main thread)
@@ -319,6 +327,8 @@ src/
     localScores.ts     # device-local top-5 leaderboard per chart
     community/         # community catalog client + server-side chart sanitizer
     sfx.ts             # synthesized sound effects (miss fret-buzz)
+    foldable.ts        # pure foldable rules: hinge split, screen-change detection
+    audioSession.ts    # iOS audio session hint (play through the silent switch)
     metrics/           # analytics: types, aggregate, insights, store (Postgres/JSONL), client
   workers/
     analyzeWorker.ts   # runs audioAnalysis off the main thread
@@ -388,6 +398,7 @@ plans:
 - `docs/serverSideAudioAnalysis.md` — where heavy DSP/ML should run.
 - `docs/cloneHeroImportPlan.md` — Clone Hero import (incl. current behavior).
 - `docs/trackCatalog.md` — catalog data model & how to add tracks.
+- `docs/iphoneDuoSupport.md` — iPhone Duo / foldable behavior, testing, next steps.
 - `docs/adr/` — architecture decision records (why things are built this way).
 - `CHANGELOG.md` — what changed, when.
 
