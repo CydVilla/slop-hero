@@ -27,9 +27,13 @@ Useful scripts:
 
 ```bash
 npm run typecheck  # tsc --noEmit (strict)
+npm test           # Vitest unit tests (pure game logic)
 npm run build      # production build
+npm run test:e2e   # Playwright foldable/two-player smoke tests (after build)
 npm run lint       # next lint
 ```
+
+First time running the browser tests? `npx playwright install chromium`.
 
 Please make sure `npm run typecheck` and `npm run build` pass before opening a PR.
 

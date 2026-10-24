@@ -24,6 +24,8 @@ interface ScorePanelProps {
   starPowerActive: boolean;
   /** Set while rehearsing: the looping section (and speed), shown as a chip. */
   practiceLabel?: string;
+  /** Two-player mode: score, stars, combo, and rock meter only. */
+  compact?: boolean;
 }
 
 export function ScorePanel({
@@ -32,6 +34,7 @@ export function ScorePanel({
   rockMeter,
   starPowerActive,
   practiceLabel,
+  compact = false,
 }: ScorePanelProps): React.JSX.Element {
   const accuracy = accuracyPercent(score);
   const multiplier =
@@ -39,7 +42,7 @@ export function ScorePanel({
   const zone = rockMeterZone(rockMeter);
 
   return (
-    <div className={styles.panel}>
+    <div className={`${styles.panel} ${compact ? styles.compact : ""}`}>
       {practiceLabel && (
         <span className={styles.practiceBadge}>PRACTICE · {practiceLabel}</span>
       )}
@@ -82,14 +85,16 @@ export function ScorePanel({
         />
       </div>
 
-      <dl className={styles.stats}>
-        <Stat label="Acc" value={`${accuracy.toFixed(1)}%`} />
-        <Stat label="Max" value={score.maxCombo.toString()} />
-        <Stat label="Perfect" value={score.perfect.toString()} tone="perfect" />
-        <Stat label="Great" value={score.great.toString()} tone="great" />
-        <Stat label="Good" value={score.good.toString()} tone="good" />
-        <Stat label="Miss" value={score.miss.toString()} tone="miss" />
-      </dl>
+      {!compact && (
+        <dl className={styles.stats}>
+          <Stat label="Acc" value={`${accuracy.toFixed(1)}%`} />
+          <Stat label="Max" value={score.maxCombo.toString()} />
+          <Stat label="Perfect" value={score.perfect.toString()} tone="perfect" />
+          <Stat label="Great" value={score.great.toString()} tone="great" />
+          <Stat label="Good" value={score.good.toString()} tone="good" />
+          <Stat label="Miss" value={score.miss.toString()} tone="miss" />
+        </dl>
+      )}
     </div>
   );
 }

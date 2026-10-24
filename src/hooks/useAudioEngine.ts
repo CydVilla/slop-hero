@@ -52,6 +52,12 @@ export interface AudioEngine {
    * slows/speeds with it. Used by practice mode. Pitch shifts with rate.
    */
   setRate: (rate: number) => void;
+  /**
+   * Seconds between the audio clock and the speaker (`baseLatency` +
+   * `outputLatency`), or null where the browser doesn't report it (Safari) or
+   * no running context exists yet. Large values mean Bluetooth audio.
+   */
+  getOutputLatencySec: () => number | null;
 }
 
 interface InternalState {
@@ -277,6 +283,14 @@ export function useAudioEngine(): AudioEngine {
     };
   }, []);
 
+  const getOutputLatencySec = useCallback((): number | null => {
+    const ctx = ref.current.ctx as (AudioContext & { outputLatency?: number }) | null;
+    if (!ctx || ctx.state !== "running") return null;
+    const output = ctx.outputLatency;
+    if (typeof output !== "number" || !Number.isFinite(output) || output <= 0) return null;
+    return output + (Number.isFinite(ctx.baseLatency) ? ctx.baseLatency : 0);
+  }, []);
+
   // Memoize so the engine object identity is stable across renders (it only
   // changes when the low-frequency reactive values change). This keeps effects
   // in consuming hooks from re-subscribing on every render.
@@ -294,6 +308,7 @@ export function useAudioEngine(): AudioEngine {
       getTimeMs,
       setVolume,
       setRate,
+      getOutputLatencySec,
     }),
     [
       status,
@@ -308,6 +323,7 @@ export function useAudioEngine(): AudioEngine {
       getTimeMs,
       setVolume,
       setRate,
+      getOutputLatencySec,
     ],
   );
 }

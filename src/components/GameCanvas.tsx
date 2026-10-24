@@ -34,6 +34,7 @@ import {
 } from "@/game/constants";
 import { starPowerMeterAt } from "@/game/starPower";
 import { clamp, noteTravelProgress } from "@/game/timing";
+import { RENDER_SCALE, initialRenderScale, nextRenderScale } from "@/lib/renderScale";
 import type {
   GamePhase,
   HitFeedback,
@@ -418,9 +419,13 @@ export function GameCanvas({
     let raf = 0;
     let cssWidth = 0;
     let cssHeight = 0;
+    // Backing-store scale: native density (≤3×), stepped down if frames drag.
+    let scale = initialRenderScale(window.devicePixelRatio);
+    let lastFrameAt = 0;
+    const frameTimes: number[] = [];
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = scale;
       const rect = canvas.getBoundingClientRect();
       cssWidth = rect.width;
       cssHeight = rect.height;
@@ -433,14 +438,32 @@ export function GameCanvas({
     observer.observe(canvas);
     resize();
 
-    const draw = () => {
+    // Sample frame times while a song plays; after each window, drop the
+    // resolution a notch if the median frame is too slow.
+    const sampleFrame = (now: number, playing: boolean) => {
+      const delta = now - lastFrameAt;
+      lastFrameAt = now;
+      if (!playing || delta <= 0 || delta > RENDER_SCALE.ignoreFrameMs) return;
+      frameTimes.push(delta);
+      if (frameTimes.length < RENDER_SCALE.sampleFrames) return;
+      const next = nextRenderScale(scale, frameTimes);
+      frameTimes.length = 0;
+      if (next !== scale) {
+        scale = next;
+        resize();
+      }
+    };
+
+    const draw = (now: number) => {
       const {
         chart: c,
         getTimeMs: getT,
         getCalibrationOffsetMs: getCal,
         onFrame: frame,
         combo: currentCombo,
+        phase: currentPhase,
       } = propsRef.current;
+      sampleFrame(now, currentPhase === "playing");
 
       const t = getT();
       frame(t);

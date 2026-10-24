@@ -140,6 +140,12 @@ export interface RhythmGame {
   /** Leave practice mode and return to the normal ready screen at full speed. */
   exitPractice: () => void;
   /**
+   * Stop wherever the run is (countdown, mid-song, results) and return to the
+   * ready screen at full speed, out of practice. Same as exitPractice; named
+   * for callers that aren't practicing (e.g. leaving two-player mode).
+   */
+  reset: () => void;
+  /**
    * Press a lane (finger/key down). Judges the note at the hit line and, if it
    * is a sustain, begins holding its tail.
    */
@@ -169,6 +175,8 @@ export interface RhythmGame {
   update: (songTimeMs: number) => void;
 
   adjustCalibration: (deltaMs: number) => void;
+  /** Set the calibration outright (tap test result, saved device value). */
+  setCalibration: (ms: number) => void;
   resetCalibration: () => void;
 }
 
@@ -435,7 +443,7 @@ export function useRhythmGame(
     [beginCountdown],
   );
 
-  const exitPractice = useCallback(() => {
+  const reset = useCallback(() => {
     clearCountdownTimer();
     practiceRef.current = null;
     setPracticeState(null);
@@ -446,6 +454,7 @@ export function useRhythmGame(
     setCountdown(0);
     setPhase("idle");
   }, [audio, clearCountdownTimer, resetGameState]);
+  const exitPractice = reset;
 
   const restart = useCallback(() => {
     beginCountdown();
@@ -818,6 +827,10 @@ export function useRhythmGame(
     setCalibrationOffsetMs((prev) => prev + deltaMs);
   }, []);
 
+  const setCalibration = useCallback((ms: number) => {
+    setCalibrationOffsetMs(ms);
+  }, []);
+
   const resetCalibration = useCallback(
     () => setCalibrationOffsetMs(defaultCalibrationOffsetMs()),
     [],
@@ -843,6 +856,7 @@ export function useRhythmGame(
       restart,
       startPractice,
       exitPractice,
+      reset,
       pressLane,
       releaseLane,
       holdLane,
@@ -851,6 +865,7 @@ export function useRhythmGame(
       tapLane: pressLane,
       update,
       adjustCalibration,
+      setCalibration,
       resetCalibration,
     }),
     [
@@ -868,6 +883,7 @@ export function useRhythmGame(
       restart,
       startPractice,
       exitPractice,
+      reset,
       pressLane,
       releaseLane,
       holdLane,
@@ -875,6 +891,7 @@ export function useRhythmGame(
       whammyLane,
       update,
       adjustCalibration,
+      setCalibration,
       resetCalibration,
     ],
   );

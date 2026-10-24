@@ -289,6 +289,8 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
   // self-loads from the video id. Kept as no-ops so the shape matches.
   const loadFromUrl = useCallback(async (): Promise<number> => durationMs, [durationMs]);
   const loadSilent = useCallback((): void => {}, []);
+  // The iframe plays through its own media pipeline; its latency isn't exposed.
+  const getOutputLatencySec = useCallback((): number | null => null, []);
 
   const engine = useMemo<AudioEngine>(
     () => ({
@@ -304,8 +306,23 @@ export function useYouTubeEngine(videoId?: string): YouTubeEngine {
       getTimeMs,
       setVolume,
       setRate,
+      getOutputLatencySec,
     }),
-    [status, isPlaying, durationMs, loadFromUrl, loadSilent, resume, play, pause, stop, getTimeMs, setVolume, setRate],
+    [
+      status,
+      isPlaying,
+      durationMs,
+      loadFromUrl,
+      loadSilent,
+      resume,
+      play,
+      pause,
+      stop,
+      getTimeMs,
+      setVolume,
+      setRate,
+      getOutputLatencySec,
+    ],
   );
 
   return { engine, containerRef };

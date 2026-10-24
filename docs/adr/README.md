@@ -24,4 +24,5 @@ the reasoning available long after the PR discussion is forgotten.
 | [0004](./0004-guitar-feel-gameplay.md) | Guitar-feel gameplay: star power, rock meter, perspective highway | Accepted (amended by 0005) |
 | [0005](./0005-hopo-whammy-star-authoring.md) | HOPOs, whammy, and star-phrase authoring | Accepted |
 | [0006](./0006-practice-leaderboards-hold-authoring.md) | Practice mode, local leaderboards, hold authoring | Accepted |
-| [0007](./0007-foldable-iphone-duo-support.md) | Foldable (iPhone Duo) support: feature-detect the fold, never the device | Accepted |
+| [0007](./0007-foldable-iphone-duo-support.md) | Foldable (iPhone Duo) support: feature-detect the fold, never the device | Accepted (tabletop layout amended by 0008) |
+| [0008](./0008-duo-versus-fret-pads-calibration.md) | Two-player versus, tabletop fret pads, device calibration | Accepted |

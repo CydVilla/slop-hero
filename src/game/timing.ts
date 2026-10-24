@@ -7,10 +7,11 @@
  *
  *   effectiveNoteTime = note.timeMs + chart.offsetMs - calibrationOffsetMs
  *
- * A POSITIVE calibration offset means "I am hitting late" -> shift judgement
- * windows so notes are judged later, i.e. subtract from the note time when
- * comparing against song time. We expose a single helper so every call site
- * applies the sign consistently.
+ * A POSITIVE calibration offset moves every note EARLIER on the song clock
+ * (judged and drawn sooner) — for players who tap ahead of the beat. A
+ * NEGATIVE offset moves notes later — for audio that reaches the ear late
+ * (Bluetooth headphones), which makes players tap late. See calibration.ts.
+ * We expose a single helper so every call site applies the sign consistently.
  */
 
 import { NOTE_TRAVEL_MS } from "./constants";

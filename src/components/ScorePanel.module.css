@@ -15,7 +15,7 @@
 }
 
 .scoreValue {
-  font-size: clamp(26px, 3.4vw, 40px);
+  font-size: clamp(24px, 3.4cqi, 40px);
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -35,7 +35,7 @@
 }
 
 .comboValue {
-  font-size: clamp(20px, 2.6vw, 30px);
+  font-size: clamp(18px, 2.6cqi, 30px);
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -152,4 +152,23 @@
 }
 .miss dd {
   color: #f87171;
+}
+
+/* Two-player mode: a slim card per highway. */
+.compact {
+  gap: 8px;
+  padding: 10px 12px;
+  min-width: 140px;
+  background: rgba(5, 6, 10, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+/* Sized by the space the panel is given (its pane or the highway), not the
+   viewport: a 445px fold pane gets the compact card even on a wide screen. */
+@container (max-width: 520px) {
+  .panel {
+    gap: 10px;
+    padding: 12px;
+    min-width: 150px;
+  }
 }

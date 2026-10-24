@@ -1,0 +1,36 @@
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  background: rgba(56, 189, 248, 0.08);
+  color: #e0f2fe;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.action {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: none;
+  background: #38bdf8;
+  color: #05060a;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dismiss {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(224, 242, 254, 0.7);
+  font-size: 20px;
+  cursor: pointer;
+}
