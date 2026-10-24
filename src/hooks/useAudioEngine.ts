@@ -21,6 +21,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { setAudioSessionType } from "@/lib/audioSession";
+
 export type AudioEngineStatus = "empty" | "loading" | "ready";
 
 export interface AudioEngine {
@@ -129,6 +131,8 @@ export function useAudioEngine(): AudioEngine {
   const loadFromUrl = useCallback(
     async (url: string): Promise<number> => {
       setStatus("loading");
+      // iPhone: play the song even with the silent switch on.
+      setAudioSessionType("playback");
       const s = ref.current;
       const ctx = getOrCreateContext(s);
       const res = await fetch(url);
@@ -148,6 +152,7 @@ export function useAudioEngine(): AudioEngine {
   );
 
   const loadSilent = useCallback((durMs: number) => {
+    setAudioSessionType("auto");
     const s = ref.current;
     getOrCreateContext(s);
     s.buffer = null;

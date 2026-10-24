@@ -7,6 +7,35 @@ The project doesn't cut versioned releases — every merge to `main` deploys —
 so entries are grouped by date instead of version. Architectural decisions
 behind these changes live in [`docs/adr/`](./docs/adr/).
 
+## 2026-10-24
+
+### Added
+
+- **iPhone Duo / foldable support.** In half-folded (book) posture, the
+  highway moves onto one half of the screen, so notes never bend across the
+  hinge, and the score and calibration panels move to the other half. In
+  tabletop posture, the highway sits on the flat bottom half. This uses the
+  Viewport Segments and Device Posture APIs where available, with a narrow
+  centered-hinge heuristic for the Duo's open screen when only the posture is
+  reported. Android foldables get the same layout.
+  ([ADR-0007](./docs/adr/0007-foldable-iphone-duo-support.md),
+  [`docs/iphoneDuoSupport.md`](./docs/iphoneDuoSupport.md))
+- **Auto-pause on screen change.** Folding, unfolding, rotating, or entering
+  Split View mid-song pauses the game with a "your screen changed shape"
+  message. Safari's toolbar collapsing doesn't trigger it.
+
+### Fixed
+
+- **iPhone silent switch muted songs.** Uploaded and built-in songs now
+  request the `playback` audio session, so they play with the Ring/Silent
+  switch on. Silent/demo mode goes back to `auto`.
+- **Long-presses on iOS.** Holding a sustain no longer risks a text-selection
+  loupe, callout menu, or tap highlight on the play screen.
+- **Clipped cards on short landscape screens.** The results, practice, and
+  splash cards now scroll instead of overflowing the stage (for example, the
+  results card on an open iPhone Duo). The header and HUD also shrink below
+  560 px of height.
+
 ## 2026-07-17
 
 ### Docs

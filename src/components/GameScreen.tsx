@@ -8,6 +8,7 @@
  *   - useRhythmGame  (rules + transitions),
  *   - GameCanvas     (rendering + the rAF loop + tap-the-note input),
  *   - ScorePanel / CalibrationPanel (UI),
+ *   - useFoldLayout  (foldable screens: highway on one side of the hinge),
  *   - keyboard input for desktop testing.
  *
  * It deliberately holds almost no gameplay logic itself — that lives in the
@@ -30,8 +31,10 @@ import { accuracyPercent, baseChartScore, isComplete, starRating } from "@/game/
 import { ensureStarPhrases } from "@/game/starPower";
 import type { RhythmChart } from "@/game/types";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
+import { useFoldLayout } from "@/hooks/useFoldLayout";
 import { useRhythmGame } from "@/hooks/useRhythmGame";
 import { useYouTubeEngine } from "@/hooks/useYouTubeEngine";
+import { screenFormChanged, type Rect } from "@/lib/foldable";
 import {
   bestScore,
   chartScoreKey,
@@ -114,6 +117,28 @@ export function GameScreen({
   }, [scoreKey]);
 
   const [debug, setDebug] = useState({ song: 0, chart: 0 });
+
+  // Foldables (iPhone Duo): when the screen is half-folded, keep the highway on
+  // one side of the hinge and move the HUD to the other.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const fold = useFoldLayout(stageRef);
+  const split = fold.split.kind === "single" ? null : fold.split;
+
+  // Folding, unfolding, or rotating mid-song moves every lane out from under
+  // the player's fingers — pause, like a game does when a controller drops.
+  const [pausedForScreen, setPausedForScreen] = useState(false);
+  const formRef = useRef(fold.form);
+  useEffect(() => {
+    const prev = formRef.current;
+    formRef.current = fold.form;
+    if (game.phase !== "playing") return;
+    if (screenFormChanged(prev, fold.form)) {
+      togglePause();
+      setPausedForScreen(true);
+    } else {
+      setPausedForScreen(false); // resumed (or started) on a settled screen
+    }
+  }, [fold.form, game.phase, togglePause]);
 
   const tailMs = 2000;
   const durationMs = useMemo(() => chartDurationMs(chart) + tailMs, [chart]);
@@ -259,6 +284,31 @@ export function GameScreen({
   const showFailed = game.phase === "failed";
   // In YouTube mode the player must be ready before we can start playback.
   const ytLoading = Boolean(youtubeId) && audio.status !== "ready";
+  // Modals sit over the highway pane, never across the hinge.
+  const modalStyle = paneStyle(split?.highway);
+
+  const scorePanel = (
+    <ScorePanel
+      score={game.score}
+      stars={stars}
+      rockMeter={game.rockMeter}
+      starPowerActive={game.starPower.active}
+      practiceLabel={
+        game.practice
+          ? `${game.practice.label}${speedPick !== 1 ? ` · ${speedPick}×` : ""}`
+          : undefined
+      }
+    />
+  );
+  const calibrationPanel = (
+    <CalibrationPanel
+      calibrationOffsetMs={game.calibrationOffsetMs}
+      onAdjust={game.adjustCalibration}
+      onReset={game.resetCalibration}
+      songTimeMs={debug.song}
+      chartTimeMs={debug.chart}
+    />
+  );
 
   return (
     <div className={styles.screen}>
@@ -279,7 +329,7 @@ export function GameScreen({
         </div>
       </header>
 
-      <div className={styles.stage}>
+      <div ref={stageRef} className={styles.stage}>
         {youtubeId && (
           <div
             ref={youtube.containerRef}
@@ -288,7 +338,7 @@ export function GameScreen({
           />
         )}
 
-        <div className={styles.canvasLayer}>
+        <div className={styles.canvasLayer} style={paneStyle(split?.highway)}>
           <GameCanvas
             chart={chart}
             phase={game.phase}
@@ -309,32 +359,23 @@ export function GameScreen({
           />
         </div>
 
-        <div className={`${styles.overlay} ${styles.overlayTopLeft}`}>
-          <ScorePanel
-            score={game.score}
-            stars={stars}
-            rockMeter={game.rockMeter}
-            starPowerActive={game.starPower.active}
-            practiceLabel={
-              game.practice
-                ? `${game.practice.label}${speedPick !== 1 ? ` · ${speedPick}×` : ""}`
-                : undefined
-            }
-          />
-        </div>
-
-        <div className={`${styles.overlay} ${styles.overlayTopRight}`}>
-          <CalibrationPanel
-            calibrationOffsetMs={game.calibrationOffsetMs}
-            onAdjust={game.adjustCalibration}
-            onReset={game.resetCalibration}
-            songTimeMs={debug.song}
-            chartTimeMs={debug.chart}
-          />
-        </div>
+        {split ? (
+          <div className={styles.hudPane} style={paneStyle(split.hud)}>
+            {scorePanel}
+            {calibrationPanel}
+          </div>
+        ) : (
+          <>
+            <div className={`${styles.overlay} ${styles.overlayTopLeft}`}>{scorePanel}</div>
+            <div className={`${styles.overlay} ${styles.overlayTopRight}`}>
+              {calibrationPanel}
+            </div>
+          </>
+        )}
 
         {showStart && practiceOpen && (
           <PracticePicker
+            style={modalStyle}
             sections={sections}
             sectionPick={sectionPick}
             onPickSection={setSectionPick}
@@ -353,6 +394,7 @@ export function GameScreen({
 
         {showStart && !practiceOpen && (
           <Splash
+            style={modalStyle}
             title={ytLoading ? "Loading video…" : "Ready?"}
             subtitle={
               ytLoading
@@ -379,7 +421,12 @@ export function GameScreen({
         )}
 
         {showCountdown && (
-          <div className={styles.countdown} aria-live="assertive" role="status">
+          <div
+            className={styles.countdown}
+            style={modalStyle}
+            aria-live="assertive"
+            role="status"
+          >
             <span key={game.countdown} className={styles.countdownNumber}>
               {game.countdown}
             </span>
@@ -389,11 +436,14 @@ export function GameScreen({
 
         {showPaused && (
           <Splash
+            style={modalStyle}
             title={inPractice ? "Practice paused" : "Paused"}
             subtitle={
-              inPractice
-                ? `Looping ${game.practice?.label ?? "section"} — no fail, no pressure.`
-                : "Take a breath."
+              pausedForScreen
+                ? "Your screen changed shape, so the highway moved — resume when your fingers are back on the lanes."
+                : inPractice
+                  ? `Looping ${game.practice?.label ?? "section"} — no fail, no pressure.`
+                  : "Take a breath."
             }
             actionLabel="Resume"
             onAction={togglePause}
@@ -406,6 +456,7 @@ export function GameScreen({
 
         {showFailed && (
           <Splash
+            style={modalStyle}
             title="Booed off stage!"
             subtitle="The rock meter hit empty — too many misses in a row. Shake it off and give the crowd another show."
             actionLabel="Try again"
@@ -415,6 +466,7 @@ export function GameScreen({
 
         {showFinished && (
           <Results
+            style={modalStyle}
             scoreText={game.score.score.toLocaleString()}
             stars={stars}
             maxCombo={game.score.maxCombo}
@@ -433,7 +485,21 @@ export function GameScreen({
   );
 }
 
+/** Absolute-position an overlay over one pane of a split stage. */
+function paneStyle(rect: Rect | undefined): React.CSSProperties | undefined {
+  if (!rect) return undefined;
+  return {
+    left: rect.x,
+    top: rect.y,
+    width: rect.width,
+    height: rect.height,
+    right: "auto",
+    bottom: "auto",
+  };
+}
+
 function Splash({
+  style,
   title,
   subtitle,
   actionLabel,
@@ -445,6 +511,7 @@ function Splash({
   disabled,
   extra,
 }: {
+  style?: React.CSSProperties;
   title: string;
   subtitle: string;
   actionLabel: string;
@@ -457,7 +524,7 @@ function Splash({
   extra?: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div className={styles.splash}>
+    <div className={styles.splash} style={style}>
       <div className={styles.splashCard}>
         <h2 className={styles.splashTitle}>{title}</h2>
         <p className={styles.splashSubtitle}>{subtitle}</p>
@@ -493,6 +560,7 @@ function Splash({
  * already filtered out.
  */
 function PracticePicker({
+  style,
   sections,
   sectionPick,
   onPickSection,
@@ -501,6 +569,7 @@ function PracticePicker({
   onStart,
   onBack,
 }: {
+  style?: React.CSSProperties;
   sections: PracticeSection[];
   sectionPick: number;
   onPickSection: (index: number) => void;
@@ -510,7 +579,7 @@ function PracticePicker({
   onBack: () => void;
 }): React.JSX.Element {
   return (
-    <div className={styles.splash}>
+    <div className={styles.splash} style={style}>
       <div className={styles.splashCard}>
         <h2 className={styles.splashTitle}>Practice mode</h2>
         <p className={styles.splashSubtitle}>
@@ -556,6 +625,7 @@ function PracticePicker({
 }
 
 function Results({
+  style,
   scoreText,
   stars,
   maxCombo,
@@ -568,6 +638,7 @@ function Results({
   placing,
   onReplay,
 }: {
+  style?: React.CSSProperties;
   scoreText: string;
   stars: number;
   maxCombo: number;
@@ -581,7 +652,7 @@ function Results({
   onReplay: () => void;
 }): React.JSX.Element {
   return (
-    <div className={styles.splash}>
+    <div className={styles.splash} style={style}>
       <div className={styles.splashCard}>
         <h2 className={styles.splashTitle}>Song complete</h2>
         {placing?.isNewBest && (
