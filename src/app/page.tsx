@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { InstallHint } from "@/components/InstallHint";
 import { PlayRandomButton } from "@/components/PlayRandomButton";
 import styles from "./page.module.css";
 
@@ -35,6 +36,8 @@ export default function LandingPage(): React.JSX.Element {
             Add a song
           </Link>
         </div>
+
+        <InstallHint />
 
         <nav className={styles.subnav}>
           <Link href="/editor" className={styles.subnavLink}>

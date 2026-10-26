@@ -7,6 +7,51 @@ The project doesn't cut versioned releases — every merge to `main` deploys —
 so entries are grouped by date instead of version. Architectural decisions
 behind these changes live in [`docs/adr/`](./docs/adr/).
 
+## 2026-10-24 (later)
+
+### Added
+
+- **Two-player versus** on one screen: one song, two highways side by side
+  (one per side of the hinge on a half-folded iPhone Duo), each with its own
+  score, combo, rock meter, and star power. Highest score wins; getting booed
+  off forfeits. Offered wherever each half is at least 300 × 300. Keyboard:
+  P1 A S D F G + left Shift, P2 H J K L ; + Enter. Versus runs aren't
+  recorded. Both players share one audio clock through a new shared
+  transport. ([ADR-0008](./docs/adr/0008-duo-versus-fret-pads-calibration.md))
+- **Tabletop fret pads**: with a foldable propped in tabletop posture, the
+  highway stands on the upright half and five fret pads plus a ★ strip lie on
+  the flat half. Same press/slide/whammy rules as the highway. This is now the
+  default tabletop layout; "Tap highway instead" restores the old one.
+- **Swap sides** in book posture: the highway can take either half of the
+  hinge, and the choice is remembered on the device.
+- **Tap test**: a metronome tap-along that measures your audio lag and sets
+  the calibration. Built for Bluetooth headphones, which add 150–250 ms.
+  Available from the ready/pause cards and the calibration panel.
+- **Calibration is saved on the device.** With nothing saved, browsers that
+  report `AudioContext.outputLatency` (Chrome, Firefox) get a starting value
+  when output is slow.
+- **Installable web app**: manifest (`display: fullscreen`), icons, and Apple
+  web-app metadata, plus a home-screen install hint on the landing page.
+- **Screen stays awake** during the count-in and song (Screen Wake Lock).
+- **Crisper highway on 3× screens**: the canvas renders at native density up
+  to 3× and steps down automatically if frames drop below 50 fps.
+- **Foldable smoke tests**: a Playwright suite (`npm run test:e2e`) at the
+  iPhone Duo's screen sizes and postures, run in CI as its own job.
+
+### Changed
+
+- The HUD, panels, and cards size with **CSS container queries** (the
+  highway pane, HUD pane, or card space they're given) instead of viewport
+  media queries, so foldable panes and two-player halves get the right
+  layout.
+
+### Fixed
+
+- **Calibration sign docs.** `timing.ts`, the README, and the calibration
+  panel described the offset backwards. A positive offset brings notes in
+  earlier (for players who tap ahead of the beat); late audio needs a
+  negative one. The math was always right.
+
 ## 2026-10-24
 
 ### Added

@@ -24,7 +24,7 @@ export interface Tuning {
   /**
    * Calibration offset (ms) the game starts with. The loop nudges this toward
    * the median offset players actually dial in, so the default sync improves
-   * over time. Positive = judge notes later.
+   * over time. Positive = notes judged earlier (see timing.ts).
    */
   defaultCalibrationOffsetMs: number;
   /**

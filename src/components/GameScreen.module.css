@@ -69,10 +69,23 @@
   cursor: pointer;
 }
 
+/* The stage is a size container so HUD and cards size to the space they are
+   actually given (a fold pane, half a two-player stage) rather than to the
+   viewport — viewport breakpoints misfire on foldables. */
 .stage {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  container: stage / size;
+}
+
+/* Corner-HUD layer, laid exactly over the highway pane it decorates. */
+.overlayLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  container: highway / size;
 }
 
 .overlay {
@@ -109,6 +122,41 @@
   gap: 16px;
   padding: 16px;
   overflow-y: auto;
+  container: hud / size;
+}
+
+/* Fold layout switches (swap sides / fret pads) in the HUD pane. */
+.layoutBtn {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Two-player mode: each player's slim score card, top-left of their highway. */
+.playerHud {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.playerTag {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #05060a;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.versusWin {
+  color: #fde047;
+  text-shadow: 0 0 18px rgba(253, 224, 71, 0.6);
 }
 
 /* The note highway sits on its own layer above the (optional) video backdrop. */
@@ -166,7 +214,7 @@
 }
 
 .countdownNumber {
-  font-size: clamp(96px, 24vw, 220px);
+  font-size: clamp(72px, 24cqmin, 220px);
   font-weight: 850;
   line-height: 1;
   color: #fff;
@@ -176,7 +224,7 @@
 }
 
 .countdownHint {
-  font-size: clamp(14px, 3vw, 20px);
+  font-size: clamp(14px, 3cqi, 20px);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -221,6 +269,7 @@
   padding: 12px;
   background: rgba(5, 6, 10, 0.72);
   backdrop-filter: blur(6px);
+  container: modal / size;
 }
 
 /* max-height + scroll: on short landscape screens (the iPhone Duo open is
@@ -239,6 +288,11 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* A modal opened on top of another splash (e.g. the tap test over Paused). */
+.splashTop {
+  z-index: 12;
 }
 
 /* Scroll the card instead of squashing its contents. */
@@ -301,6 +355,20 @@
   gap: 8px;
   font-size: 34px;
   line-height: 1;
+}
+
+/* Quiet text-style action inside a splash card (e.g. the tap test). */
+.linkBtn {
+  align-self: center;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: #7dd3fc;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 /* Best-score line on the ready screen. */
@@ -464,9 +532,22 @@
   text-align: right;
 }
 
-/* On small / portrait screens shrink the side overlays so they don't cover
-   the highway too much. Landscape (Tesla) keeps the full panels. */
+/* The header spans the viewport, so it keeps viewport queries. */
 @media (max-width: 720px) {
+  .titleGroup {
+    display: none;
+  }
+}
+
+@media (max-height: 560px) {
+  .header {
+    height: 44px;
+  }
+}
+
+/* Narrow highway (phone portrait, the iPhone Duo's outer screen): shrink the
+   corner panels so they don't cover the highway. Wide (Tesla) keeps them. */
+@container highway (max-width: 720px) {
   .overlay {
     transform: scale(0.82);
     transform-origin: top var(--corner, left);
@@ -474,24 +555,22 @@
   .overlayTopRight {
     --corner: right;
   }
-  .titleGroup {
-    display: none;
-  }
 }
 
-/* Short landscape screens (phones on their side, the iPhone Duo unfolded):
-   reclaim vertical space for the highway. */
-@media (max-height: 560px) {
-  .header {
-    height: 44px;
-  }
+/* Short highway (phones on their side, the open Duo, the upright half in
+   tabletop fret-pad mode): reclaim vertical space for the notes. */
+@container highway (max-height: 480px) {
   .overlay {
-    transform: scale(0.78);
+    transform: scale(0.72);
     transform-origin: top var(--corner, left);
   }
   .overlayTopRight {
     --corner: right;
   }
+}
+
+/* Short card space: tighten splash/result cards. */
+@container modal (max-height: 540px) {
   .splashCard {
     padding: 20px;
     gap: 10px;

@@ -1,0 +1,60 @@
+.root {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(180deg, #0b0e17, #05060a);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.topRow {
+  display: flex;
+  gap: 10px;
+}
+
+.star {
+  flex: 1 1 auto;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.exit {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pads {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  touch-action: none;
+}
+
+.pad {
+  border-radius: 16px;
+  border: 3px solid var(--lane);
+  background: color-mix(in srgb, var(--lane) 16%, transparent);
+  transition: background-color 60ms linear, box-shadow 60ms linear;
+}
+
+.padLit {
+  background: color-mix(in srgb, var(--lane) 55%, transparent);
+  box-shadow: 0 0 22px var(--lane);
+}

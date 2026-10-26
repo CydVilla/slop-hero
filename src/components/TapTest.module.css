@@ -1,0 +1,25 @@
+/* Big, forgiving tap target — the test measures timing, not aim. */
+.pad {
+  width: 100%;
+  min-height: 160px;
+  border-radius: 20px;
+  border: 2px solid rgba(125, 211, 252, 0.5);
+  background: radial-gradient(circle at 50% 40%, rgba(56, 189, 248, 0.28), rgba(56, 189, 248, 0.08));
+  color: #e0f2fe;
+  font-size: 28px;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pad:active {
+  background: radial-gradient(circle at 50% 40%, rgba(56, 189, 248, 0.45), rgba(56, 189, 248, 0.14));
+}
+
+.result {
+  font-size: 40px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}

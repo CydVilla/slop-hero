@@ -1,6 +1,7 @@
 # 0007 — Foldable (iPhone Duo) support: feature-detect the fold, never the device
 
-- **Status:** Accepted
+- **Status:** Accepted (tabletop layout amended by
+  [0008](./0008-duo-versus-fret-pads-calibration.md): fret pads by default)
 - **Date:** 2026-10-24
 
 ## Context

@@ -61,3 +61,38 @@
   color: rgba(255, 255, 255, 0.45);
   font-variant-numeric: tabular-nums;
 }
+
+.tapTest {
+  padding: 10px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  background: rgba(56, 189, 248, 0.1);
+  color: #bae6fd;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tapTest:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.note {
+  margin: 0;
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #bae6fd;
+}
+
+@container (max-width: 520px) {
+  .panel {
+    gap: 8px;
+    padding: 10px;
+  }
+  .btn,
+  .btnReset {
+    padding: 10px 6px;
+  }
+}

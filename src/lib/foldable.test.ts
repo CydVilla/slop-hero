@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   IPHONE_DUO_VIEWPORT,
+  canSeatTwoPlayers,
   screenFormChanged,
   splitForSegments,
+  stageLayout,
   synthesizeSegments,
   type Rect,
   type ScreenForm,
@@ -127,5 +129,76 @@ describe("screenFormChanged", () => {
   it("ignores Safari's toolbar collapsing (height-only change)", () => {
     expect(screenFormChanged(form(466, 600), form(466, 678))).toBe(false);
     expect(screenFormChanged(form(890, 540), form(890, 626))).toBe(false);
+  });
+});
+
+describe("stageLayout", () => {
+  const stage = { width: unfoldedStage.width, height: unfoldedStage.height };
+  const book = splitForSegments(synthesizeSegments(unfoldedViewport, "folded"), unfoldedStage);
+  const tabletop = splitForSegments(
+    [
+      { x: 0, y: 0, width: 626, height: 445 },
+      { x: 0, y: 445, width: 626, height: 445 },
+    ],
+    { x: 0, y: HEADER, width: 626, height: 890 - HEADER },
+  );
+  const one = { fretPad: false, players: 1 } as const;
+
+  it("fills the stage on a flat screen", () => {
+    expect(stageLayout({ kind: "single" }, stage, one)).toEqual({ highways: [undefined] });
+  });
+
+  it("follows the fold split for one player, with modals on the highway side", () => {
+    expect(book.kind).toBe("book");
+    if (book.kind === "single") return;
+    expect(stageLayout(book, stage, one)).toEqual({
+      highways: [book.highway],
+      hud: book.hud,
+      modal: book.highway,
+    });
+  });
+
+  it("moves the highway up and pads down in tabletop fret-pad mode", () => {
+    if (tabletop.kind === "single") throw new Error("expected tabletop");
+    const layout = stageLayout(tabletop, { width: 626, height: 834 }, { fretPad: true, players: 1 });
+    expect(layout.highways).toEqual([tabletop.hud]);
+    expect(layout.pads).toEqual(tabletop.highway);
+    expect(layout.hud).toBeUndefined();
+  });
+
+  it("seats two players either side of the hinge, P1 on the left", () => {
+    if (book.kind === "single") throw new Error("expected book");
+    const layout = stageLayout(book, stage, { fretPad: false, players: 2 });
+    expect(layout.highways.map((r) => r?.x)).toEqual([0, 445]);
+    expect(layout.modal?.x).toBe(445);
+  });
+
+  it("splits a flat landscape stage in halves for two players", () => {
+    const layout = stageLayout({ kind: "single" }, stage, { fretPad: false, players: 2 });
+    expect(layout.highways).toEqual([
+      { x: 0, y: 0, width: 445, height: 570 },
+      { x: 445, y: 0, width: 445, height: 570 },
+    ]);
+    expect(layout.modal).toBeUndefined();
+  });
+});
+
+describe("canSeatTwoPlayers", () => {
+  it("allows the open Duo, flat or book, but not tabletop or the outer screen", () => {
+    const flatStage = { width: 890, height: 570 };
+    expect(canSeatTwoPlayers({ kind: "single" }, flatStage)).toBe(true);
+    const book = splitForSegments(synthesizeSegments(unfoldedViewport, "folded"), unfoldedStage);
+    expect(canSeatTwoPlayers(book, flatStage)).toBe(true);
+    const tabletop = {
+      kind: "tabletop",
+      highway: { x: 0, y: 389, width: 626, height: 445 },
+      hud: { x: 0, y: 0, width: 626, height: 389 },
+    } as const;
+    expect(canSeatTwoPlayers(tabletop, { width: 626, height: 834 })).toBe(false);
+    expect(canSeatTwoPlayers({ kind: "single" }, { width: 466, height: 622 })).toBe(false);
+  });
+
+  it("refuses short landscape phones", () => {
+    expect(canSeatTwoPlayers({ kind: "single" }, { width: 852, height: 290 })).toBe(false);
   });
 });

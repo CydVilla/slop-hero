@@ -38,11 +38,14 @@ const POSTURE_QUERY = "(device-posture: folded)";
 export interface FoldLayout {
   split: FoldSplit;
   form: ScreenForm;
+  /** The play stage's own size (CSS px). */
+  stage: { width: number; height: number };
 }
 
 const INITIAL: FoldLayout = {
   split: SINGLE,
   form: { width: 0, height: 0, segments: 1, posture: "continuous" },
+  stage: { width: 0, height: 0 },
 };
 
 function readPosture(): Posture {
@@ -77,7 +80,9 @@ function sameLayout(a: FoldLayout, b: FoldLayout): boolean {
     fa.width !== fb.width ||
     fa.height !== fb.height ||
     fa.segments !== fb.segments ||
-    fa.posture !== fb.posture
+    fa.posture !== fb.posture ||
+    a.stage.width !== b.stage.width ||
+    a.stage.height !== b.stage.height
   ) {
     return false;
   }
@@ -86,7 +91,11 @@ function sameLayout(a: FoldLayout, b: FoldLayout): boolean {
   return sameRect(a.split.highway, b.split.highway) && sameRect(a.split.hud, b.split.hud);
 }
 
-export function useFoldLayout(stageRef: React.RefObject<HTMLElement | null>): FoldLayout {
+export function useFoldLayout(
+  stageRef: React.RefObject<HTMLElement | null>,
+  /** Book posture: which half gets the highway (see splitForSegments). */
+  highwaySide: "start" | "end" = "end",
+): FoldLayout {
   const [layout, setLayout] = useState<FoldLayout>(INITIAL);
 
   useEffect(() => {
@@ -98,9 +107,11 @@ export function useFoldLayout(stageRef: React.RefObject<HTMLElement | null>): Fo
       const posture = readPosture();
       const segments = readSegments(viewport, posture);
       const r = stage.getBoundingClientRect();
+      const stageRect = { x: r.left, y: r.top, width: r.width, height: r.height };
       const next: FoldLayout = {
-        split: splitForSegments(segments, { x: r.left, y: r.top, width: r.width, height: r.height }),
+        split: splitForSegments(segments, stageRect, highwaySide),
         form: { width: viewport.width, height: viewport.height, segments: segments.length, posture },
+        stage: { width: r.width, height: r.height },
       };
       setLayout((prev) => (sameLayout(prev, next) ? prev : next));
     };
@@ -126,7 +137,7 @@ export function useFoldLayout(stageRef: React.RefObject<HTMLElement | null>): Fo
       posture?.removeEventListener("change", measure);
       query?.removeEventListener("change", measure);
     };
-  }, [stageRef]);
+  }, [stageRef, highwaySide]);
 
   return layout;
 }

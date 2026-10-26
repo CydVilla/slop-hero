@@ -159,3 +159,74 @@ export function screenFormChanged(prev: ScreenForm, next: ScreenForm): boolean {
   if (prev.width > prev.height !== next.width > next.height) return true;
   return Math.abs(next.width - prev.width) / prev.width > FORM_WIDTH_CHANGE;
 }
+
+/** A 2-player pane narrower/shorter than this can't hold a playable highway. */
+const MIN_VERSUS_PANE = 300;
+
+export interface StageLayoutOptions {
+  /** Tabletop fret-pad mode: highway on the upright half, pads on the flat half. */
+  fretPad: boolean;
+  players: 1 | 2;
+}
+
+/**
+ * Where everything goes on the play stage. Rects are stage-relative;
+ * `undefined` means "the whole stage".
+ *  - `highways` — one pane per player.
+ *  - `hud` — the score/calibration pane, or undefined for corner overlays.
+ *  - `pads` — the fret-pad pane in tabletop fret-pad mode.
+ *  - `modal` — where ready/pause/results cards go (never across a hinge).
+ */
+export interface StageLayout {
+  highways: (Rect | undefined)[];
+  hud?: Rect;
+  pads?: Rect;
+  modal?: Rect;
+}
+
+/** Can this stage seat two players side by side? */
+export function canSeatTwoPlayers(
+  split: FoldSplit,
+  stage: { width: number; height: number },
+): boolean {
+  if (split.kind === "tabletop") return false; // the hinge would cut both highways
+  if (split.kind === "book") {
+    const narrowest = Math.min(split.highway.width, split.hud.width);
+    return narrowest >= MIN_VERSUS_PANE && split.highway.height >= MIN_VERSUS_PANE;
+  }
+  return (
+    stage.width > stage.height &&
+    stage.width / 2 >= MIN_VERSUS_PANE &&
+    stage.height >= MIN_VERSUS_PANE
+  );
+}
+
+function leftToRight(a: Rect, b: Rect): [Rect, Rect] {
+  return a.x <= b.x ? [a, b] : [b, a];
+}
+
+export function stageLayout(
+  split: FoldSplit,
+  stage: { width: number; height: number },
+  { fretPad, players }: StageLayoutOptions,
+): StageLayout {
+  if (players === 2) {
+    // Book posture: one player per side of the hinge. Otherwise split the
+    // stage down the middle (including while paused on an unsuitable screen).
+    const [left, right] =
+      split.kind === "book"
+        ? leftToRight(split.highway, split.hud)
+        : [
+            { x: 0, y: 0, width: stage.width / 2, height: stage.height },
+            { x: stage.width / 2, y: 0, width: stage.width / 2, height: stage.height },
+          ];
+    return { highways: [left, right], modal: split.kind === "book" ? right : undefined };
+  }
+  if (split.kind === "single") return { highways: [undefined] };
+  if (split.kind === "tabletop" && fretPad) {
+    // Eyes up, hands down: the highway faces the player on the upright half,
+    // five fret pads lie flat on the bottom half. HUD overlays the highway.
+    return { highways: [split.hud], pads: split.highway, modal: split.hud };
+  }
+  return { highways: [split.highway], hud: split.hud, modal: split.highway };
+}

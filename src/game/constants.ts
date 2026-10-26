@@ -212,3 +212,12 @@ export const KEYBOARD_LANE_MAP: Record<string, Lane> = {
   f: 3,
   g: 4,
 };
+
+/** Second player's keys in two-player mode (H/J/K/L/; -> lanes 0..4). */
+export const KEYBOARD_LANE_MAP_P2: Record<string, Lane> = {
+  h: 0,
+  j: 1,
+  k: 2,
+  l: 3,
+  ";": 4,
+};

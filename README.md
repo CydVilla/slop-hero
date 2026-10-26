@@ -70,11 +70,19 @@ catalog tracks!) are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 - 🖱️⌨️📱 Mouse, touch (Pointer Events), and keyboard (A/S/D/F/G, Space,
   Enter/Shift for star power).
 - 📖 **iPhone Duo / foldables**: half-fold the screen like a book and the
-  highway moves onto one side of the hinge, with the HUD on the other. In
-  tabletop posture the highway goes on the flat bottom half. Folding,
-  unfolding, or rotating mid-song auto-pauses. On any iPhone, songs play even
-  with the silent switch on. See
-  [`docs/iphoneDuoSupport.md`](./docs/iphoneDuoSupport.md).
+  highway moves onto one side of the hinge (⇄ swap sides), with the HUD on the
+  other. Prop it up in tabletop posture and you get **fret pads**: highway on
+  the upright half, five big pads on the flat half. Folding, unfolding, or
+  rotating mid-song auto-pauses. On any iPhone, songs play even with the
+  silent switch on. See [`docs/iphoneDuoSupport.md`](./docs/iphoneDuoSupport.md).
+- 🆚 **Two players** on one screen (open iPhone Duo, Tesla, tablets): one
+  song, two highways side by side, highest score wins (booed off = forfeit).
+- 🎧 **Tap test** — tap along to a metronome through your headphones and the
+  game measures your audio lag (Bluetooth adds 150–250 ms). Calibration is
+  saved on the device; Chrome/Firefox even seed it from the reported output
+  latency.
+- 📲 **Installable** — add to the home screen for full-screen play without
+  browser toolbars; the screen stays awake during songs.
 - 📊 **Metrics dashboard** (`/dashboard`) — anonymous, gameplay-only telemetry
   (accuracy, miss rates, calibration, per-track stats) with an "all players" vs
   "this device" view and privacy controls (opt-out / clear).
@@ -127,6 +135,7 @@ npm run typecheck       # tsc --noEmit
 npm run lint            # next lint
 npm test                # run the pure-logic unit tests (Vitest, one-shot)
 npm run test:watch      # run Vitest in watch mode
+npm run test:e2e        # Playwright foldable smoke tests (run `npm run build` first)
 npm run analyze:metrics # run the self-improvement analyzer (see below)
 ```
 
@@ -292,6 +301,9 @@ src/
   components/          # React UI (rendering + panels)
     GameScreen.tsx     # composition root for a play session
     GameCanvas.tsx     # perspective-highway Canvas renderer + rAF loop + touch input
+    FretPad.tsx        # tabletop fret pads (same touch rules as the highway)
+    TapTest.tsx        # tap-along latency calibration (metronome + median lag)
+    InstallHint.tsx    # home-screen install nudge (iOS how-to / install prompt)
     PlayRandomButton.tsx # picks a random track → /play
     ScorePanel.tsx     # score, combo/multiplier, stars, rock meter, ratings
     CalibrationPanel.tsx
@@ -306,6 +318,8 @@ src/
     hopo.ts            # hammer-ons: natural marking + held-lane auto-hit finder
     rockMeter.ts       # crowd gauge: gains/losses, zones, song-fail check
     practice.ts        # rehearsal sections, loop runtime, lead-in/wrap timing
+    calibration.ts     # tap-test math, latency seed, calibration range
+    versus.ts          # two-player outcome (score wins, booed off forfeits)
     chartUtils.ts      # ids, sorting, validation, runtime-state construction
     demoChart.ts       # built-in demo chart
     autoMapper.ts      # deterministic BPM-grid automapper (+ fallback)
@@ -319,6 +333,7 @@ src/
     useYouTubeEngine.ts # YouTube IFrame player as the clock, same interface
     useRhythmGame.ts   # orchestrates rules + React state transitions
     useFoldLayout.ts   # foldables: viewport segments + posture → stage split
+    useWakeLock.ts     # keep the screen on during a song
   lib/
     activeSong.ts      # in-memory hand-off between routes → /play
     analyzeClient.ts   # decode + drive the analysis worker (main thread)
@@ -327,13 +342,19 @@ src/
     localScores.ts     # device-local top-5 leaderboard per chart
     community/         # community catalog client + server-side chart sanitizer
     sfx.ts             # synthesized sound effects (miss fret-buzz)
-    foldable.ts        # pure foldable rules: hinge split, screen-change detection
+    foldable.ts        # pure foldable rules: hinge split, stage layout, screen changes
+    sharedTransport.ts # two players, one audio clock (merged play, joint stop)
+    renderScale.ts     # adaptive canvas resolution (≤3×, steps down when slow)
+    deviceCalibration.ts # calibration saved per device
+    playPrefs.ts       # swap-sides / fret-pad preferences
     audioSession.ts    # iOS audio session hint (play through the silent switch)
     metrics/           # analytics: types, aggregate, insights, store (Postgres/JSONL), client
   workers/
     analyzeWorker.ts   # runs audioAnalysis off the main thread
 scripts/
   apply-tuning.mjs     # self-improvement analyzer → rewrites tuning.json + report
+e2e/
+  foldables.spec.ts    # Playwright: Duo screen shapes, postures, two players
 docs/                  # future-work plans + references
 .github/               # issue forms + PR template + CI / auto-merge / self-improve
 ```
@@ -366,9 +387,22 @@ docs/                  # future-work plans + references
 
 `effectiveNoteTime = note.timeMs + chart.offsetMs − calibrationOffsetMs`
 
-A **positive** calibration offset judges notes *later* (compensates for tapping
-early / audio output latency). The calibration panel shows live song time vs.
-the offset-adjusted chart time for debugging.
+A **positive** calibration offset brings notes in *earlier* (for players who
+tap ahead of the beat); a **negative** one pushes them *later* (for audio that
+reaches you late — Bluetooth headphones add 150–250 ms). The calibration panel
+shows live song time vs. the offset-adjusted chart time for debugging.
+
+You rarely need the ±10 ms buttons for big offsets:
+
+- **Tap test** (calibration panel) — tap along to a metronome through the
+  headphones you'll play with; the median lag becomes your calibration.
+  Audio-only on purpose, so it measures the audio route, not your eyes.
+- **Latency seed** — with no saved calibration, browsers that report
+  `AudioContext.outputLatency` (Chrome, Firefox) get a starting value when the
+  output is slow (≥ 60 ms, i.e. Bluetooth). Safari doesn't report it; use the
+  tap test there.
+- Calibration is **saved on the device** (it depends on your audio route, not
+  the song); **Reset** returns to the default and forgets it.
 
 ## Contributing
 
